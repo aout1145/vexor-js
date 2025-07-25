@@ -1,0 +1,17 @@
+.{
+    .name = .uv,
+    .version = "1.51.0",
+    .fingerprint = 0xaaf74b457c857988,
+    .minimum_zig_version = "0.14.1",
+    .dependencies = .{
+        .libuv = .{
+            .url = "https://github.com/libuv/libuv/archive/refs/tags/v1.51.0.tar.gz",
+            .hash = "N-V-__8AABtNRAB58M85Dm0p6z6iRHP3Zz3eyo08HU4EF5mq",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

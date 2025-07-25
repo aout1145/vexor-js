@@ -1,0 +1,21 @@
+.{
+    .name = .vexor_js,
+    .version = "0.0.0",
+    .fingerprint = 0xda48e93dbd095460,
+    .minimum_zig_version = "0.14.1",
+    .dependencies = .{
+        .qjs = .{
+            .url = "./third_party/quickjs-ng",
+            .hash = "qjs-0.10.1-SogNDApFAAA0LY-wxNxLXstVEFqO-XuqFs-FHjb0A7W8",
+        },
+        .uv = .{
+            .url = "./third_party/libuv",
+            .hash = "uv-1.51.0-iHmFfJwxAADFPSvoUcLOdxqMFJwlAejfjvy1FT6l7zHZ",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

@@ -1,0 +1,192 @@
+const std = @import("std");
+const c = @import("./c.zig");
+
+// value utils
+pub fn newValue(ctx: *c.JSContext, value: anytype) c.JSValue {
+    const T = @TypeOf(value);
+    return switch (T) {
+        i8, i16, i32 => c.JS_NewInt32(ctx, value),
+        u8, u16, u32 => c.JS_NewUint32(ctx, value),
+        i64 => c.JS_NewInt64(ctx, value),
+        f64 => c.JS_NewFloat64(ctx, value),
+        bool => c.JS_NewBool(ctx, value),
+        else => @compileError("unsupported type"),
+    };
+}
+/// an exception will be thrown when a error returned
+/// if T==JSValue, it will NOT increase ref
+pub fn castValue(T: type, ctx: *c.JSContext, val: c.JSValueConst) !T {
+    const check = struct {
+        fn check(ret: c_int) !void {
+            if (ret != 0) return error.FailedToCastValue;
+        }
+    }.check;
+    switch (@typeInfo(T)) {
+        .int, .float => {
+            if (!c.JS_IsNumber(val)) {
+                _ = c.JS_ThrowTypeError(ctx, "not a number");
+                return error.NotANumber;
+            }
+            var ret: T = undefined;
+            switch (T) {
+                i32 => try check(c.JS_ToInt32(ctx, &ret, val)),
+                u32 => try check(c.JS_ToUint32(ctx, &ret, val)),
+                i64 => try check(c.JS_ToInt64(ctx, &ret, val)),
+                f64 => try check(c.JS_ToFloat64(ctx, &ret, val)),
+                else => @compileError("unsupported type"),
+            }
+            return ret;
+        },
+        else => switch (T) {
+            bool => {
+                if (!c.JS_IsBool(val)) {
+                    _ = c.JS_ThrowTypeError(ctx, "not a boolean");
+                    return error.NotABool;
+                }
+                return c.JS_ToBool(ctx, val) != 0;
+            },
+            c.JSValue => {
+                return val;
+            },
+            else => @compileError("unsupported type"),
+        },
+    }
+}
+pub fn getOpaque(T: type, obj: c.JSValueConst) !*T {
+    var class_id: c.JSClassID = undefined;
+    const optional_ptr = c.JS_GetAnyOpaque(obj, &class_id);
+    if (optional_ptr) |ptr| {
+        return @ptrCast(@alignCast(ptr));
+    } else {
+        return error.FailedToGetOpaque;
+    }
+}
+
+// property utils
+pub fn getProperty(T: type, ctx: *c.JSContext, this_obj: c.JSValueConst, prop: []const u8) !?T {
+    const val = c.JS_GetPropertyStr(ctx, this_obj, prop.ptr);
+    errdefer c.JS_FreeValue(ctx, val);
+    if (c.JS_IsNull(val) or c.JS_IsUndefined(val)) return null;
+    return try castValue(T, ctx, val);
+}
+
+// function utils
+pub const Function = fn (*c.JSContext, c.JSValueConst, []c.JSValueConst) anyerror!?c.JSValue;
+pub const JSFunction = fn (ctx: ?*c.JSContext, this_obj: c.JSValueConst, argc: c_int, argv: [*c]c.JSValueConst) callconv(.c) c.JSValue;
+/// an undefined will be returned when a null is returned
+/// an exception will be thrown when an error is returned without exception thrown
+pub fn wrapFunction(func: Function) JSFunction {
+    return struct {
+        fn js_func(ctx: ?*c.JSContext, this_obj: c.JSValueConst, argc: c_int, argv: [*c]c.JSValueConst) callconv(.c) c.JSValue {
+            if (func(ctx orelse unreachable, this_obj, argv[0..@intCast(argc)])) |ret| {
+                return ret orelse values.undefined();
+            } else |err| {
+                if (!c.JS_HasException(ctx)) {
+                    if (err == std.mem.Allocator.Error.OutOfMemory) {
+                        return c.JS_ThrowOutOfMemory(ctx);
+                    } else {
+                        return c.JS_ThrowInternalError(ctx, "%s", @errorName(err).ptr);
+                    }
+                } else {
+                    return values.exception();
+                }
+            }
+        }
+    }.js_func;
+}
+pub fn newFunction(arg_ctx: *c.JSContext, func: Function, cproto: comptime_int, comptime name: ?[]const u8) c.JSValue {
+    // why couldn't add a function to get symbol name?
+    const symname: []const u8 = name orelse ("[0x" ++ std.fmt.hex(@bitReverse(@intFromPtr(&func))) ++ "]");
+    return c.JS_NewCFunction2(arg_ctx, &wrapFunction(func), symname.ptr, 0, cproto, 0);
+}
+
+fn removeOptional(T: type) type {
+    const type_info = @typeInfo(T);
+    return switch (type_info) {
+        .optional => |optional| optional.child,
+        else => T,
+    };
+}
+pub fn getArgs(ctx: *c.JSContext, js_args: []c.JSValue, types: []const type) !std.meta.Tuple(types) {
+    var args: std.meta.Tuple(types) = undefined;
+    var min_args: usize = 0;
+    inline for (types) |T| {
+        if (@typeInfo(T) == .optional) break;
+        min_args += 1;
+    }
+    if (js_args.len < min_args) {
+        _ = c.JS_ThrowReferenceError(ctx, "at least %d arguments required, but %d passed", min_args, js_args.len);
+        return error.TooFewArgumentsPassed;
+    }
+    var casted_args: usize = 0;
+    errdefer inline for (types, 0..) |T, i| {
+        if (i == casted_args) break;
+        if (removeOptional(T) == []const u8) {
+            if (args[i]) |str| {
+                c.JS_FreeCString(ctx, str.ptr);
+            }
+        }
+    };
+    inline for (types, 0..) |T, i| {
+        if (i < js_args.len) {
+            args[i] = try castValue(removeOptional(T), ctx, js_args[i]);
+        } else if (@typeInfo(T) == .optional) {
+            args[i] = null;
+        } else unreachable;
+        casted_args += 1;
+    }
+    return args;
+}
+
+// promise utils
+pub const Promise = struct {
+    resolve_func: c.JSValue,
+    reject_func: c.JSValue,
+    pub fn free(self: *Promise, ctx: *c.JSContext) void {
+        c.JS_FreeValue(ctx, self.resolve_func);
+        c.JS_FreeValue(ctx, self.reject_func);
+    }
+    /// val will be released
+    pub fn resolve(self: *Promise, ctx: *c.JSContext, optional_val: ?c.JSValue) void {
+        var ret: c.JSValue = undefined;
+        if (optional_val) |val| {
+            ret = c.JS_Call(ctx, self.resolve_func, values.undefined(), 1, @constCast(@ptrCast(&val)));
+            defer c.JS_FreeValue(ctx, val);
+        } else {
+            ret = c.JS_Call(ctx, self.resolve_func, values.undefined(), 0, null);
+        }
+        defer c.JS_FreeValue(ctx, ret);
+    }
+    /// val will be released
+    pub fn reject(self: *Promise, ctx: *c.JSContext, val: c.JSValue) void {
+        defer c.JS_FreeValue(ctx, val);
+        const ret = c.JS_Call(ctx, self.reject_func, values.undefined(), 1, @constCast(@ptrCast(&val)));
+        defer c.JS_FreeValue(ctx, ret);
+    }
+};
+pub fn newPromise(ctx: *c.JSContext, promise: *Promise) !c.JSValue {
+    var resolving_funcs: [2]c.JSValue = undefined;
+    const result_promise = c.JS_NewPromiseCapability(ctx, &resolving_funcs);
+    if (!c.JS_IsPromise(result_promise)) return error.FailedToCreatePromise;
+    promise.* = .{
+        .resolve_func = resolving_funcs[0],
+        .reject_func = resolving_funcs[1],
+    };
+    return result_promise;
+}
+
+// special value utils
+pub const values = struct {
+    fn JS_MKVAL(tag: i64, val: i32) c.JSValue {
+        return .{
+            .u = .{ .int32 = val },
+            .tag = tag,
+        };
+    }
+    pub fn @"undefined"() c.JSValue {
+        return JS_MKVAL(c.JS_TAG_UNDEFINED, 0);
+    }
+    pub fn exception() c.JSValue {
+        return JS_MKVAL(c.JS_TAG_EXCEPTION, 0);
+    }
+};
