@@ -105,3 +105,35 @@ pub fn defFunc(comptime name: []const u8, comptime length: u8, func: value.Funct
         },
     };
 }
+pub const Getter = fn (ctx: *c.JSContext, this_obj: c.JSValueConst) anyerror!?c.JSValue;
+pub const JSGetter = fn (ctx: ?*c.JSContext, this_obj: c.JSValueConst) callconv(.c) c.JSValue;
+pub const Setter = fn (ctx: *c.JSContext, this_obj: c.JSValueConst, val: c.JSValueConst) anyerror!?c.JSValue;
+pub const JSSetter = fn (ctx: ?*c.JSContext, this_obj: c.JSValueConst, val: c.JSValueConst) callconv(.c) c.JSValue;
+pub fn defGetSet(comptime name: []const u8, optional_getter: ?Getter, optional_setter: ?Setter) FuncDef {
+    const js_getter = if (optional_getter) |getter| &struct {
+        fn func(ctx: ?*c.JSContext, this_obj: c.JSValueConst) callconv(.c) c.JSValue {
+            return value.wrapFunctionReturnValue(ctx, getter(ctx orelse unreachable, this_obj));
+        }
+    }.func else null;
+    const js_setter = if (optional_setter) |setter| &struct {
+        fn func(ctx: ?*c.JSContext, this_obj: c.JSValueConst, val: c.JSValueConst) callconv(.c) c.JSValue {
+            return value.wrapFunctionReturnValue(ctx, setter(ctx orelse unreachable, this_obj, val));
+        }
+    }.func else null;
+    return .{
+        .name = name.ptr,
+        .prop_flags = c.JS_PROP_CONFIGURABLE,
+        .def_type = c.JS_DEF_CGETSET,
+        .magic = 0,
+        .u = .{
+            .getset = .{
+                .get = .{
+                    .getter = js_getter,
+                },
+                .set = .{
+                    .setter = js_setter,
+                },
+            },
+        },
+    };
+}

@@ -9,7 +9,10 @@ pub fn newValue(ctx: *c.JSContext, value: anytype) c.JSValue {
         u8, u16, u32 => c.JS_NewUint32(ctx, value),
         i64 => c.JS_NewInt64(ctx, value),
         f64 => c.JS_NewFloat64(ctx, value),
-        bool => c.JS_NewBool(ctx, value),
+        bool => .{ // marco translated wrongly
+            .u = .{ .int32 = @intFromBool(value) },
+            .tag = c.JS_TAG_BOOL,
+        },
         else => @compileError("unsupported type"),
     };
 }
@@ -29,7 +32,7 @@ pub fn castValue(T: type, ctx: *c.JSContext, val: c.JSValueConst) !T {
             }
             var ret: T = undefined;
             switch (T) {
-                i32 => try check(c.JS_ToInt32(ctx, &ret, val)),
+                i32, c_int => try check(c.JS_ToInt32(ctx, &ret, val)),
                 u32 => try check(c.JS_ToUint32(ctx, &ret, val)),
                 i64 => try check(c.JS_ToInt64(ctx, &ret, val)),
                 f64 => try check(c.JS_ToFloat64(ctx, &ret, val)),
@@ -52,6 +55,17 @@ pub fn castValue(T: type, ctx: *c.JSContext, val: c.JSValueConst) !T {
         },
     }
 }
+pub fn toString(ctx: *c.JSContext, val: c.JSValueConst) ![]const u8 {
+    var len: usize = undefined;
+    const ptr = c.JS_ToCStringLen(ctx, &len, val);
+    if (ptr) |str| {
+        return str[0..len];
+    } else {
+        return error.FailedToCStringLen;
+    }
+}
+
+// opaque utils
 pub fn getOpaque(T: type, obj: c.JSValueConst) !*T {
     var class_id: c.JSClassID = undefined;
     const optional_ptr = c.JS_GetAnyOpaque(obj, &class_id);
@@ -59,6 +73,11 @@ pub fn getOpaque(T: type, obj: c.JSValueConst) !*T {
         return @ptrCast(@alignCast(ptr));
     } else {
         return error.FailedToGetOpaque;
+    }
+}
+pub fn setOpaque(obj: c.JSValueConst, @"opaque": ?*anyopaque) !void {
+    if (c.JS_SetOpaque(obj, @"opaque") != 0) {
+        return error.FailedToSetOpaque;
     }
 }
 
@@ -75,22 +94,25 @@ pub const Function = fn (*c.JSContext, c.JSValueConst, []c.JSValueConst) anyerro
 pub const JSFunction = fn (ctx: ?*c.JSContext, this_obj: c.JSValueConst, argc: c_int, argv: [*c]c.JSValueConst) callconv(.c) c.JSValue;
 /// an undefined will be returned when a null is returned
 /// an exception will be thrown when an error is returned without exception thrown
+pub fn wrapFunctionReturnValue(ctx: ?*c.JSContext, value: anyerror!?c.JSValue) c.JSValue {
+    if (value) |ret| {
+        return ret orelse values.undefined();
+    } else |err| {
+        if (!c.JS_HasException(ctx.?)) {
+            if (err == std.mem.Allocator.Error.OutOfMemory) {
+                return c.JS_ThrowOutOfMemory(ctx.?);
+            } else {
+                return c.JS_ThrowInternalError(ctx.?, "%s", @errorName(err).ptr);
+            }
+        } else {
+            return values.exception();
+        }
+    }
+}
 pub fn wrapFunction(func: Function) JSFunction {
     return struct {
         fn js_func(ctx: ?*c.JSContext, this_obj: c.JSValueConst, argc: c_int, argv: [*c]c.JSValueConst) callconv(.c) c.JSValue {
-            if (func(ctx orelse unreachable, this_obj, argv[0..@intCast(argc)])) |ret| {
-                return ret orelse values.undefined();
-            } else |err| {
-                if (!c.JS_HasException(ctx)) {
-                    if (err == std.mem.Allocator.Error.OutOfMemory) {
-                        return c.JS_ThrowOutOfMemory(ctx);
-                    } else {
-                        return c.JS_ThrowInternalError(ctx, "%s", @errorName(err).ptr);
-                    }
-                } else {
-                    return values.exception();
-                }
-            }
+            return wrapFunctionReturnValue(ctx, func(ctx orelse unreachable, this_obj, argv[0..@intCast(argc)]));
         }
     }.js_func;
 }
@@ -107,7 +129,7 @@ fn removeOptional(T: type) type {
         else => T,
     };
 }
-pub fn getArgs(ctx: *c.JSContext, js_args: []c.JSValue, types: []const type) !std.meta.Tuple(types) {
+pub fn getArgs(ctx: *c.JSContext, js_args: []c.JSValueConst, types: []const type) !std.meta.Tuple(types) {
     var args: std.meta.Tuple(types) = undefined;
     var min_args: usize = 0;
     inline for (types) |T| {
@@ -188,5 +210,8 @@ pub const values = struct {
     }
     pub fn exception() c.JSValue {
         return JS_MKVAL(c.JS_TAG_EXCEPTION, 0);
+    }
+    pub fn @"null"() c.JSValue {
+        return JS_MKVAL(c.JS_TAG_NULL, 0);
     }
 };

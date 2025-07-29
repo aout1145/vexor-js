@@ -11,18 +11,40 @@ pub const smp_allocator = if (@import("builtin").is_test) std.testing.allocator 
 pub const UVDataHeader = struct {
     pub const CloseCallback = *const fn (handle: [*c]uv.uv_handle_t) callconv(.c) void;
     close_cb: CloseCallback,
+    ref_count: u8,
+
     pub fn init(close_cb: CloseCallback) UVDataHeader {
         return .{
             .close_cb = close_cb,
+            .ref_count = 0,
         };
     }
     pub fn check(comptime T: type) void {
         inline for (std.meta.fields(T)) |field| {
-            if (field.type == UVDataHeader and @offsetOf(T, field.name) == 0) {
+            if (@offsetOf(T, field.name) == 0) {
+                if (field.type == UVDataHeader) {
+                    // do nothing
+                } else if (@typeInfo(field.type) == .@"struct") {
+                    check(field.type);
+                } else {
+                    @compileError(@typeName(T) ++ " does not have a UVDataHeader field firstly");
+                }
                 return;
             }
         }
-        @compileError(@typeName(T) ++ " does not have a UVDataHeader field firstly");
+        comptime unreachable;
+    }
+    pub fn ref(self: *UVDataHeader, T: type) *T {
+        self.ref_count += 1;
+        return @ptrCast(@alignCast(self));
+    }
+    pub fn unref(self: *UVDataHeader, T: type, allocator: std.mem.Allocator) void {
+        std.debug.assert(self.ref_count > 0);
+        self.ref_count -= 1;
+        if (self.ref_count == 0) {
+            const ptr: *T = @ptrCast(@alignCast(self));
+            allocator.destroy(ptr);
+        }
     }
 };
 
@@ -36,21 +58,8 @@ pub fn init() !*Self {
     const self = try smp_allocator.create(Self);
     self.rt = (if (@import("builtin").is_test) qjs.JS_NewRuntime2(&qjs.zig_utils.malloc_functions, @constCast(&std.testing.allocator)) else qjs.JS_NewRuntime()) orelse unreachable;
     errdefer qjs.JS_FreeRuntime(self.rt);
-    self.ctx = qjs.JS_NewContextRaw(self.rt) orelse unreachable;
+    self.ctx = qjs.JS_NewContext(self.rt) orelse unreachable;
     errdefer qjs.JS_FreeContext(self.ctx);
-    qjs.JS_AddIntrinsicBaseObjects(self.ctx);
-    qjs.JS_AddIntrinsicBigInt(self.ctx);
-    qjs.JS_AddIntrinsicDate(self.ctx);
-    qjs.JS_AddIntrinsicEval(self.ctx);
-    qjs.JS_AddIntrinsicJSON(self.ctx);
-    qjs.JS_AddIntrinsicMapSet(self.ctx);
-    qjs.JS_AddIntrinsicPromise(self.ctx);
-    qjs.JS_AddIntrinsicProxy(self.ctx);
-    qjs.JS_AddIntrinsicRegExp(self.ctx);
-    qjs.JS_AddIntrinsicRegExpCompiler(self.ctx);
-    qjs.JS_AddIntrinsicTypedArrays(self.ctx);
-    qjs.JS_AddIntrinsicWeakRef(self.ctx);
-    qjs.JS_AddPerformance(self.ctx);
 
     const uvcheck = @import("uv").zig_utils.check;
     try uvcheck(uv.uv_loop_init(&self.loop));
