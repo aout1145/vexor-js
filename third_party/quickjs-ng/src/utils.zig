@@ -3,14 +3,11 @@ const c = @import("./c.zig");
 const value = @import("./value.zig");
 
 /// false means error occurred
-pub fn executePendingJob(ctx: *c.JSContext, writer: std.io.AnyWriter) !bool {
+pub fn executePendingJob(ctx: *c.JSContext) !bool {
     while (true) {
         var ctx1: ?*c.JSContext = undefined;
         const err = c.JS_ExecutePendingJob(c.JS_GetRuntime(ctx), &ctx1);
-        if (err < 0) {
-            try dumpError(ctx1 orelse unreachable, writer);
-            return false;
-        }
+        if (err < 0) return false;
         if (err == 0) break;
     }
     return true;

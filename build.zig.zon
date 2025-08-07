@@ -6,11 +6,11 @@
     .dependencies = .{
         .qjs = .{
             .url = "./third_party/quickjs-ng",
-            .hash = "qjs-0.10.1-SogNDJFNAADs_6-uGMYC3wiY5NImYHaJtlOPaaODtg5B",
+            .hash = "qjs-0.10.1-SogNDGNVAABK8p33aYCc1p6Hc9OILZVglsaQetshz0Kd",
         },
         .uv = .{
             .url = "./third_party/libuv",
-            .hash = "uv-1.51.0-iHmFfJwxAADFPSvoUcLOdxqMFJwlAejfjvy1FT6l7zHZ",
+            .hash = "uv-1.51.0-iHmFfCE7AADuChUiFM3OM3ZRPvKSpjzkVBsKshT6YqUS",
         },
     },
     .paths = .{

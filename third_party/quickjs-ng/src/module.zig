@@ -7,6 +7,7 @@ pub fn newModule(
     comptime name: []const u8,
     comptime func_defs: []const FuncDef,
     comptime class_defs: []const ClassDef,
+    comptime value_defs: anytype,
 ) !*c.JSModuleDef {
     const init_func = struct {
         fn inner_func(ctx2: ?*c.JSContext, m: ?*c.JSModuleDef) callconv(.c) c_int {
@@ -21,13 +22,19 @@ pub fn newModule(
                 }));
                 // create proto & constructor
                 const proto = c.JS_NewObject(ctx2);
-                c.JS_SetPropertyFunctionList(ctx2, proto, def.func_defs.ptr, def.func_defs.len);
+                ret |= c.JS_SetPropertyFunctionList(ctx2, proto, def.func_defs.ptr, def.func_defs.len);
                 const constructor = c.JS_NewCFunction2(ctx2, value.wrapFunction(def.constructor), def.name.ptr, 0, c.JS_CFUNC_constructor, 0);
                 c.JS_SetConstructor(ctx2, constructor, proto);
                 c.JS_SetClassProto(ctx2, class_id, proto);
                 ret |= c.JS_SetModuleExport(ctx2, m, def.name.ptr, constructor);
                 // save class_id in constructor
                 ret |= c.JS_DefinePropertyValueStr(ctx2, constructor, class_id_prop_name, value.newValue(ctx2.?, class_id), 0);
+            }
+            inline for (value_defs) |value_def| {
+                inline for (comptime std.meta.fieldNames(@TypeOf(value_def))) |field_name| {
+                    const val = value.newValue(ctx2.?, @field(value_def, field_name));
+                    ret |= c.JS_SetModuleExport(ctx2, m, field_name, val);
+                }
             }
             return ret | c.JS_SetModuleExportList(ctx2, m, func_defs.ptr, @intCast(func_defs.len));
         }
@@ -42,13 +49,20 @@ pub fn newModule(
         if (c.JS_AddModuleExportList(ctx, m, func_defs.ptr, @intCast(func_defs.len)) != 0) {
             return error.FailedToAddExportList;
         }
+        inline for (value_defs) |value_def| {
+            inline for (comptime std.meta.fieldNames(@TypeOf(value_def))) |field_name| {
+                if (c.JS_AddModuleExport(ctx, m, field_name) != 0) {
+                    return error.FailedToAddExport;
+                }
+            }
+        }
         return m;
     } else {
         return error.FailedToCreateCModule;
     }
 }
-pub fn setPropertyFunctionList(ctx: *c.JSContext, obj: c.JSValue, comptime tab: []const FuncDef) void {
-    c.JS_SetPropertyFunctionList(ctx, obj, tab.ptr, @intCast(tab.len));
+pub fn setPropertyFunctionList(ctx: *c.JSContext, obj: c.JSValue, comptime tab: []const FuncDef) c_int {
+    return c.JS_SetPropertyFunctionList(ctx, obj, tab.ptr, @intCast(tab.len));
 }
 
 pub const class_id_prop_name = "__vexor_class_id__";

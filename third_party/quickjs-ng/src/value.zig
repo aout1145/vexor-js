@@ -4,15 +4,28 @@ const c = @import("./c.zig");
 // value utils
 pub fn newValue(ctx: *c.JSContext, value: anytype) c.JSValue {
     const T = @TypeOf(value);
-    return switch (T) {
-        i8, i16, i32 => c.JS_NewInt32(ctx, value),
-        u8, u16, u32 => c.JS_NewUint32(ctx, value),
+    if (@typeInfo(T) == .@"struct") {
+        const obj = c.JS_NewObject(ctx);
+        inline for (comptime std.meta.fieldNames(T)) |field_name| {
+            _ = c.JS_SetPropertyStr(ctx, obj, field_name, newValue(ctx, @field(value, field_name)));
+        }
+        return obj;
+    } else if (T == type and @typeInfo(value) == .@"enum") {
+        const obj = c.JS_NewObject(ctx);
+        inline for (comptime std.meta.fields(value)) |field| {
+            _ = c.JS_SetPropertyStr(ctx, obj, field.name, newValue(ctx, @as(i32, field.value)));
+        }
+        return obj;
+    } else return switch (T) {
+        i8, i16, i32, c_int => c.JS_NewInt32(ctx, value),
+        u8, u16, u32, c_uint => c.JS_NewUint32(ctx, value),
         i64 => c.JS_NewInt64(ctx, value),
         f64 => c.JS_NewFloat64(ctx, value),
         bool => .{ // marco translated wrongly
             .u = .{ .int32 = @intFromBool(value) },
             .tag = c.JS_TAG_BOOL,
         },
+        []const u8, []u8 => c.JS_NewStringLen(ctx, value.ptr, value.len),
         else => @compileError("unsupported type"),
     };
 }
@@ -33,7 +46,7 @@ pub fn castValue(T: type, ctx: *c.JSContext, val: c.JSValueConst) !T {
             var ret: T = undefined;
             switch (T) {
                 i32, c_int => try check(c.JS_ToInt32(ctx, &ret, val)),
-                u32 => try check(c.JS_ToUint32(ctx, &ret, val)),
+                u32, c_uint => try check(c.JS_ToUint32(ctx, &ret, val)),
                 i64 => try check(c.JS_ToInt64(ctx, &ret, val)),
                 f64 => try check(c.JS_ToFloat64(ctx, &ret, val)),
                 else => @compileError("unsupported type"),
@@ -63,6 +76,26 @@ pub fn toString(ctx: *c.JSContext, val: c.JSValueConst) ![]const u8 {
     } else {
         return error.FailedToCStringLen;
     }
+}
+pub fn getBuffer(ctx: *c.JSContext, val: c.JSValueConst) ![]const u8 {
+    var obj = val;
+    if (!c.JS_IsArrayBuffer(obj)) {
+        obj = c.JS_GetPropertyStr(ctx, obj, "buffer");
+        c.JS_FreeValue(ctx, obj);
+    }
+    if (!c.JS_IsArrayBuffer(obj)) {
+        _ = c.JS_ThrowTypeError(ctx, "not a ArrayBuffer");
+        return error.NotArrayBufferOrDataView;
+    }
+    var len: usize = undefined;
+    const cbuf = c.JS_GetArrayBuffer(ctx, &len, obj);
+    return cbuf[0..len];
+}
+pub fn toBuffer(ctx: *c.JSContext, val: c.JSValueConst, allocator: std.mem.Allocator) ![]const u8 {
+    const cbuf = try getBuffer(ctx, val);
+    const buf = try allocator.alloc(u8, cbuf.len);
+    @memcpy(buf, cbuf);
+    return buf;
 }
 
 // opaque utils

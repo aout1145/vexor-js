@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.14.1",
     .dependencies = .{
         .@"quickjs-ng" = .{
-            .url = "https://github.com/quickjs-ng/quickjs/archive/refs/tags/v0.10.1.tar.gz",
-            .hash = "N-V-__8AAAIHPACETf0-OAZkJJtbhcPd_rMjP_tgrszOAmNS",
+            .url = "https://github.com/quickjs-ng/quickjs/archive/7238ee64dbc2fbdea044555cda8cda78785a93ed.tar.gz",
+            .hash = "N-V-__8AAFScOwDUqz9iyVj5gzHbOPoO9dp3nZ8YybfDWl5m",
         },
     },
     .paths = .{

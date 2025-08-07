@@ -14,6 +14,7 @@ pub fn init(vexor: *Vexor) !void {
         module_name,
         &SleepHandle.func_defs,
         &TimerClass.class_defs,
+        .{},
     );
 }
 
@@ -32,9 +33,8 @@ const SleepHandle = struct {
         const sh = uv.zig_utils.getData(SleepHandle, handle);
         const vexor = getVexor(sh.ctx);
 
-        if (!(qjs.zig_utils.executePendingJob(vexor.ctx, vexor.err_writer) catch false)) {
-            vexor.stop();
-        }
+        _ = qjs.zig_utils.executePendingJob(vexor.ctx) catch {};
+
         sh.promise.resolve(sh.ctx, null);
 
         uv.uv_close(@ptrCast(&sh.handle), &closeCallback);
@@ -111,8 +111,8 @@ const TimerClass = struct {
         qjs.JS_FreeValue(th.ctx, th.obj);
         th.header.unref(TimerClass, smp_allocator);
     }
-    fn close(_: *qjs.JSContext, this_val: qjs.JSValueConst, _: []qjs.JSValueConst) !?qjs.JSValue {
-        const th = try qjs.zig_utils.getOpaque(TimerClass, this_val);
+    fn close(_: *qjs.JSContext, this_obj: qjs.JSValueConst, _: []qjs.JSValueConst) !?qjs.JSValue {
+        const th = try qjs.zig_utils.getOpaque(TimerClass, this_obj);
         uv.uv_close(@ptrCast(&th.handle), &closeCallback);
         return null;
     }
@@ -120,9 +120,7 @@ const TimerClass = struct {
         const th = uv.zig_utils.getData(TimerClass, handle);
         const vexor = getVexor(th.ctx);
 
-        if (!(qjs.zig_utils.executePendingJob(vexor.ctx, vexor.err_writer) catch false)) {
-            vexor.stop();
-        }
+        _ = qjs.zig_utils.executePendingJob(vexor.ctx) catch {};
 
         const ret = qjs.JS_Call(th.ctx, th.func, th.obj, 0, null);
         defer qjs.JS_FreeValue(th.ctx, ret);
@@ -135,7 +133,7 @@ const TimerClass = struct {
             uv.uv_close(@ptrCast(&th.handle), &closeCallback);
         }
     }
-    fn constructor(ctx: *qjs.JSContext, this_val: qjs.JSValueConst, js_args: []qjs.JSValueConst) !?qjs.JSValue {
+    fn constructor(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst, js_args: []qjs.JSValueConst) !?qjs.JSValue {
         const vexor = getVexor(ctx);
 
         const func, const delay, const optional_options = try qjs.zig_utils.getArgs(ctx, js_args, &[_]type{ qjs.JSValueConst, i32, ?qjs.JSValueConst });
@@ -152,7 +150,7 @@ const TimerClass = struct {
             }
         }
 
-        const obj = try qjs.zig_utils.newObjectFromConstructor(ctx, this_val);
+        const obj = try qjs.zig_utils.newObjectFromConstructor(ctx, this_obj);
         errdefer qjs.JS_FreeValue(ctx, obj);
 
         const th = try smp_allocator.create(TimerClass);
@@ -173,10 +171,9 @@ const TimerClass = struct {
         th.handle.data = th.header.ref(TimerClass);
         return obj;
     }
-    fn finalizer(_: *qjs.JSRuntime, this_val: qjs.JSValueConst) void {
-        if (qjs.zig_utils.getOpaque(TimerClass, this_val)) |th| {
-            th.header.unref(TimerClass, smp_allocator);
-        } else |_| {}
+    fn finalizer(_: *qjs.JSRuntime, this_obj: qjs.JSValueConst) void {
+        const th = qjs.zig_utils.getOpaque(TimerClass, this_obj) catch unreachable;
+        th.header.unref(TimerClass, smp_allocator);
     }
 
     const class_defs = [_]qjs.zig_utils.ClassDef{

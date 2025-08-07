@@ -74,5 +74,5 @@ fn c_malloc_usable_size(ptr: ?*const anyopaque) callconv(.c) usize {
     const allocated: [*]const u8 = @ptrFromInt(@intFromPtr(ptr) - header_size);
     const header: *const Header = @ptrCast(@alignCast(allocated));
 
-    return header.size;
+    return header.size - header_size;
 }

@@ -14,6 +14,7 @@ pub fn init(vexor: *Vexor) !void {
         module_name,
         &[_]qjs.zig_utils.FuncDef{},
         &TTYClass.class_defs,
+        .{TTYClass.value_def},
     );
 }
 
@@ -24,15 +25,17 @@ const TTYClass = struct {
 
     fn closeCallback(handle: [*c]uv.uv_handle_t) callconv(.c) void {
         const th = uv.zig_utils.getData(TTYClass, handle);
+        th.stream.deinit();
+        th.stream.header.is_closed = true;
         th.stream.header.unref(TTYClass, smp_allocator);
     }
-    fn constructor(ctx: *qjs.JSContext, this_val: qjs.JSValueConst, js_args: []qjs.JSValueConst) !?qjs.JSValue {
+    fn constructor(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst, js_args: []qjs.JSValueConst) !?qjs.JSValue {
         const vexor = getVexor(ctx);
 
         const args = try qjs.zig_utils.getArgs(ctx, js_args, &[_]type{uv.uv_file});
         const fd = args[0];
 
-        const obj = try qjs.zig_utils.newObjectFromConstructor(ctx, this_val);
+        const obj = try qjs.zig_utils.newObjectFromConstructor(ctx, this_obj);
         errdefer qjs.JS_FreeValue(ctx, obj);
 
         const th = try smp_allocator.create(TTYClass);
@@ -46,11 +49,29 @@ const TTYClass = struct {
         th.handle.data = th.stream.header.ref(TTYClass);
         return obj;
     }
-    fn finalizer(_: *qjs.JSRuntime, this_val: qjs.JSValueConst) void {
-        if (qjs.zig_utils.getOpaque(TTYClass, this_val)) |th| {
-            th.stream.deinit();
-            th.stream.header.unref(TTYClass, smp_allocator);
-        } else |_| {}
+    fn finalizer(_: *qjs.JSRuntime, this_obj: qjs.JSValueConst) void {
+        const th = qjs.zig_utils.getOpaque(TTYClass, this_obj) catch unreachable;
+        th.stream.header.close(&th.handle);
+        th.stream.header.unref(TTYClass, smp_allocator);
+    }
+    fn setMode(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst, js_args: []qjs.JSValueConst) !?qjs.JSValue {
+        const th = try qjs.zig_utils.getOpaque(TTYClass, this_obj);
+
+        const args = try qjs.zig_utils.getArgs(ctx, js_args, &[_]type{uv.uv_tty_mode_t});
+        const mode = args[0];
+
+        try check(ctx, uv.uv_tty_set_mode(&th.handle, mode));
+
+        return null;
+    }
+    fn getWindowSize(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst, _: []qjs.JSValueConst) !?qjs.JSValue {
+        const th = try qjs.zig_utils.getOpaque(TTYClass, this_obj);
+
+        const WindowSize = struct { width: c_int, height: c_int };
+        var wndsize: WindowSize = undefined;
+        try check(ctx, uv.uv_tty_get_winsize(&th.handle, &wndsize.width, &wndsize.height));
+
+        return qjs.zig_utils.newValue(ctx, wndsize);
     }
 
     const class_defs = [_]qjs.zig_utils.ClassDef{
@@ -58,8 +79,17 @@ const TTYClass = struct {
             "TTY",
             TTYClass.constructor,
             TTYClass.finalizer,
-            &[_]qjs.zig_utils.FuncDef{} ++ &StreamClass.func_defs,
+            &[_]qjs.zig_utils.FuncDef{
+                qjs.zig_utils.defFunc("setMode", 0, setMode),
+                qjs.zig_utils.defFunc("getWindowSize", 0, getWindowSize),
+            } ++ &StreamClass.func_defs,
         ),
+    };
+    const value_def = .{
+        .Mode = enum(uv.uv_tty_mode_t) {
+            NORMAL = uv.UV_TTY_MODE_NORMAL,
+            RAW = uv.UV_TTY_MODE_RAW,
+        },
     };
 };
 
@@ -68,6 +98,7 @@ comptime {
 }
 
 test TTYClass {
+    const testRun = @import("vexor").debug.testRun;
     const testStdin = struct {
         fn func(vexor: *Vexor, js_str: []const u8, input_str: []const u8, expected_err: ?[]const u8) !void {
             const pipe = try std.posix.pipe();
@@ -77,7 +108,24 @@ test TTYClass {
             try std.posix.dup2(pipe[0], std.posix.STDIN_FILENO);
             defer std.posix.dup2(oldfd, std.posix.STDIN_FILENO) catch {};
             _ = try std.posix.write(pipe[1], input_str);
-            try @import("vexor").debug.testRun(vexor, js_str, expected_err);
+            try testRun(vexor, js_str, expected_err);
+        }
+    }.func;
+    const testStdout = struct {
+        fn func(vexor: *Vexor, js_str: []const u8, comptime output_str: []const u8, expected_err: ?[]const u8) !void {
+            const pipe = try std.posix.pipe();
+            defer std.posix.close(pipe[0]);
+            const oldfd = try std.posix.dup(std.posix.STDOUT_FILENO);
+            try std.posix.dup2(pipe[1], std.posix.STDOUT_FILENO);
+            defer std.posix.dup2(oldfd, std.posix.STDOUT_FILENO) catch {};
+            try testRun(vexor, js_str, expected_err);
+            std.posix.close(pipe[1]);
+            var buf: [output_str.len]u8 = undefined;
+            @memset(&buf, 0);
+            _ = try std.posix.read(pipe[0], &buf);
+            if (!std.mem.eql(u8, &buf, output_str)) {
+                return error.WrongStdout;
+            }
         }
     }.func;
 
@@ -114,6 +162,34 @@ test TTYClass {
     try testStdin(vexor,
         \\import { TTY } from 'std:tty';
         \\const stdin = new TTY(0);
-        \\expectEql((await stdin.read(11)).length, 11);
+        \\const result = await stdin.read(11);
+        \\expectEql(result.length, 11);
+        \\expectEql(result.toString(), '104,101,108,108,111,32,119,111,114,108,100');
     , "hello world", "");
+    try testStdin(vexor,
+        \\import { TTY } from 'std:tty';
+        \\const stdin = new TTY(0);
+        \\stdin.read(7);
+        \\stdin.close();
+        \\stdin.close();
+    , "hello world", null);
+    try testStdout(vexor,
+        \\import { TTY } from 'std:tty';
+        \\const stdout = new TTY(1);
+        \\await stdout.writeText("abc\n");
+        \\await stdout.write(Uint8Array.of(97, 98, 99, 10));
+    , "abc\nabc\n", "");
+    try testStdout(vexor,
+        \\import { TTY } from 'std:tty';
+        \\const stdout = new TTY(1);
+        \\await stdout.tryWriteText("abc\n");
+        \\await stdout.tryWrite(Uint8Array.of(97, 98, 99, 10));
+    , "abc\nabc\n", "");
+    try testRun(vexor,
+        \\import { TTY, Mode } from 'std:tty';
+        \\const stdout = new TTY(1);
+        \\expectEql(Mode.NORMAL, 0);
+        \\expectEql(Mode.RAW, 1);
+        \\stdout.setMode(Mode.NORMAL);
+    , "");
 }

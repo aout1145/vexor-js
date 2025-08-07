@@ -64,7 +64,7 @@ fn expectEql(ctx: *qjs.JSContext, _: qjs.JSValueConst, js_args: []qjs.JSValueCon
 pub fn init(vexor: *Vexor) void {
     const global_this = qjs.JS_GetGlobalObject(vexor.ctx);
     defer qjs.JS_FreeValue(vexor.ctx, global_this);
-    qjs.zig_utils.setPropertyFunctionList(vexor.ctx, global_this, &[_]qjs.JSCFunctionListEntry{
+    _ = qjs.zig_utils.setPropertyFunctionList(vexor.ctx, global_this, &[_]qjs.JSCFunctionListEntry{
         qjs.zig_utils.defFunc("print", 0, print),
         qjs.zig_utils.defFunc("expect", 0, expect),
         qjs.zig_utils.defFunc("expectEql", 2, expectEql),
