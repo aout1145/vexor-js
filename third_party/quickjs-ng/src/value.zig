@@ -116,14 +116,9 @@ pub fn toBuffer(ctx: *c.JSContext, val: c.JSValueConst, allocator: std.mem.Alloc
 }
 
 // opaque utils
-pub fn getOpaque(T: type, obj: c.JSValueConst) !*T {
+pub fn getOpaque(T: type, obj: c.JSValueConst) ?*T {
     var class_id: c.JSClassID = undefined;
-    const optional_ptr = c.JS_GetAnyOpaque(obj, &class_id);
-    if (optional_ptr) |ptr| {
-        return @ptrCast(@alignCast(ptr));
-    } else {
-        return error.FailedToGetOpaque;
-    }
+    return @ptrCast(@alignCast(c.JS_GetAnyOpaque(obj, &class_id)));
 }
 /// set opaque only after a object created successfully
 /// or may cause double free (from constructor & finalizer)

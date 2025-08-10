@@ -48,14 +48,14 @@ pub const StreamClass = struct {
     }
 
     fn close(_: *qjs.JSContext, this_obj: qjs.JSValueConst, _: []qjs.JSValueConst) !?qjs.JSValue {
-        const sh = try qjs.zig_utils.getOpaque(StreamClass, this_obj);
+        const sh = qjs.zig_utils.getOpaque(StreamClass, this_obj).?;
         sh.header.close(sh.handle);
         return null;
     }
 
     // read functions
     fn readable(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst) !?qjs.JSValue {
-        const sh = try qjs.zig_utils.getOpaque(StreamClass, this_obj);
+        const sh = qjs.zig_utils.getOpaque(StreamClass, this_obj).?;
         return try qjs.zig_utils.newValue(ctx, uv.uv_is_readable(sh.handle) != 0);
     }
     const ReadMode = enum {
@@ -150,7 +150,7 @@ pub const StreamClass = struct {
     fn readFn(comptime read_mode: ReadMode, comptime read_type: ReadType) qjs.zig_utils.Function {
         return struct {
             fn func(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst, js_args: []qjs.JSValueConst) !?qjs.JSValue {
-                const sh = try qjs.zig_utils.getOpaque(StreamClass, this_obj);
+                const sh = qjs.zig_utils.getOpaque(StreamClass, this_obj).?;
                 if (sh.read.option != null) {
                     try check(ctx, uv.UV_EALREADY);
                 }
@@ -205,7 +205,7 @@ pub const StreamClass = struct {
 
     // write functions
     fn writable(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst) !?qjs.JSValue {
-        const sh = try qjs.zig_utils.getOpaque(StreamClass, this_obj);
+        const sh = qjs.zig_utils.getOpaque(StreamClass, this_obj).?;
         return try qjs.zig_utils.newValue(ctx, uv.uv_is_writable(sh.handle) != 0);
     }
     const WriteHandle = struct {
@@ -239,7 +239,7 @@ pub const StreamClass = struct {
     fn writeFn(comptime write_type: WriteType) qjs.zig_utils.Function {
         return struct {
             fn func(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst, js_args: []qjs.JSValueConst) !?qjs.JSValue {
-                const sh = try qjs.zig_utils.getOpaque(StreamClass, this_obj);
+                const sh = qjs.zig_utils.getOpaque(StreamClass, this_obj).?;
 
                 const wh = try smp_allocator.create(WriteHandle);
                 errdefer smp_allocator.destroy(wh);
@@ -271,7 +271,7 @@ pub const StreamClass = struct {
     fn tryWriteFn(comptime write_type: WriteType) qjs.zig_utils.Function {
         return struct {
             fn func(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst, js_args: []qjs.JSValueConst) !?qjs.JSValue {
-                const sh = try qjs.zig_utils.getOpaque(StreamClass, this_obj);
+                const sh = qjs.zig_utils.getOpaque(StreamClass, this_obj).?;
 
                 const args = try qjs.zig_utils.getArgs(ctx, js_args, &[_]type{qjs.JSValue});
                 const buffer = switch (write_type) {

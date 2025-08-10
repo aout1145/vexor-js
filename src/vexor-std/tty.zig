@@ -53,10 +53,10 @@ const TTYClass = struct {
         if (qjs.zig_utils.getOpaque(TTYClass, this_obj)) |th| {
             th.stream.header.close(&th.handle);
             th.stream.header.unref(TTYClass, smp_allocator);
-        } else |_| {}
+        }
     }
     fn setMode(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst, js_args: []qjs.JSValueConst) !?qjs.JSValue {
-        const th = try qjs.zig_utils.getOpaque(TTYClass, this_obj);
+        const th = qjs.zig_utils.getOpaque(TTYClass, this_obj).?;
 
         const args = try qjs.zig_utils.getArgs(ctx, js_args, &[_]type{uv.uv_tty_mode_t});
         const mode = args[0];
@@ -66,7 +66,7 @@ const TTYClass = struct {
         return null;
     }
     fn getWindowSize(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst, _: []qjs.JSValueConst) !?qjs.JSValue {
-        const th = try qjs.zig_utils.getOpaque(TTYClass, this_obj);
+        const th = qjs.zig_utils.getOpaque(TTYClass, this_obj).?;
 
         const WindowSize = struct { width: c_int, height: c_int };
         var wndsize: WindowSize = undefined;
