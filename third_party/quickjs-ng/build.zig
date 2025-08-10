@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) void {
         .windows => {
             mod_qjs.addCMacro("WIN32_LEAN_AND_MEAN", "");
         },
-        .linux => {
+        .linux, .macos => {
             mod_qjs.linkSystemLibrary("pthread", .{});
         },
         else => unreachable,
