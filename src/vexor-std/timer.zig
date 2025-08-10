@@ -172,8 +172,9 @@ const TimerClass = struct {
         return null;
     }
     fn finalizer(_: *qjs.JSRuntime, this_obj: qjs.JSValueConst) void {
-        const th = qjs.zig_utils.getOpaque(TimerClass, this_obj) catch unreachable;
-        th.header.unref(TimerClass, smp_allocator);
+        if (qjs.zig_utils.getOpaque(TimerClass, this_obj)) |th| {
+            th.header.unref(TimerClass, smp_allocator);
+        } else |_| {}
     }
 
     const class_defs = [_]qjs.zig_utils.ClassDef{

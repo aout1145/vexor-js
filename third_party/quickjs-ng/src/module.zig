@@ -28,6 +28,7 @@ pub fn newModule(
                 // register class & id
                 var class_id: c.JSClassID = 0;
                 _ = c.JS_NewClassID(c.JS_GetRuntime(ctx2), &class_id);
+                if (class_id == 0) ret |= -1;
                 ret |= c.JS_NewClass(c.JS_GetRuntime(ctx2), class_id, &std.mem.zeroInit(c.JSClassDef, .{
                     .class_name = def.name.ptr,
                     .finalizer = ClassDef.wrapFinalizer(def.finalizer),

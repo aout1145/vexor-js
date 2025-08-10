@@ -41,18 +41,18 @@ const TTYClass = struct {
         errdefer smp_allocator.destroy(th);
         try th.stream.init(Vexor.UVDataHeader.init(&closeCallback), ctx, @ptrCast(&th.handle));
         errdefer th.stream.deinit();
+        try qjs.zig_utils.setOpaque(this_obj, th.stream.header.ref(TTYClass));
 
         try check(ctx, uv.uv_tty_init(&vexor.loop, &th.handle, fd, 0));
-
-        try qjs.zig_utils.setOpaque(this_obj, th.stream.header.ref(TTYClass));
         th.handle.data = th.stream.header.ref(TTYClass);
 
         return null;
     }
     fn finalizer(_: *qjs.JSRuntime, this_obj: qjs.JSValueConst) void {
-        const th = qjs.zig_utils.getOpaque(TTYClass, this_obj) catch unreachable;
-        th.stream.header.close(&th.handle);
-        th.stream.header.unref(TTYClass, smp_allocator);
+        if (qjs.zig_utils.getOpaque(TTYClass, this_obj)) |th| {
+            th.stream.header.close(&th.handle);
+            th.stream.header.unref(TTYClass, smp_allocator);
+        } else |_| {}
     }
     fn setMode(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst, js_args: []qjs.JSValueConst) !?qjs.JSValue {
         const th = try qjs.zig_utils.getOpaque(TTYClass, this_obj);
