@@ -94,4 +94,5 @@ fn compileJSFile(
 const js_files_std = .{
     .@"timer.js.compiled" = "src/vexor-std/timer.js",
     .@"tty.js.compiled" = "src/vexor-std/tty.js",
+    .@"fs.js.compiled" = "src/vexor-std/fs.js",
 };
