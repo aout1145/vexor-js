@@ -41,9 +41,10 @@ const TTYClass = struct {
         errdefer smp_allocator.destroy(th);
         try th.stream.init(Vexor.UVDataHeader.init(&closeCallback), ctx, @ptrCast(&th.handle));
         errdefer th.stream.deinit();
-        try qjs.zig_utils.setOpaque(this_obj, th.stream.header.ref(TTYClass));
 
         try check(ctx, uv.uv_tty_init(&vexor.loop, &th.handle, fd, 0));
+
+        try qjs.zig_utils.setOpaque(this_obj, th.stream.header.ref(TTYClass));
         th.handle.data = th.stream.header.ref(TTYClass);
 
         return null;
@@ -140,6 +141,10 @@ test TTYClass {
         \\const stdin = new TTY(0);
         \\expect(stdin.readable);
     , "", "");
+    try testStdin(vexor,
+        \\import { TTY } from 'std:internal:tty';
+        \\const stdin = new TTY(3);
+    , "", null);
     try testStdin(vexor,
         \\import { TTY } from 'std:internal:tty';
         \\const stdin = new TTY(0);

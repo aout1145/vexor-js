@@ -125,6 +125,8 @@ pub fn getOpaque(T: type, obj: c.JSValueConst) !*T {
         return error.FailedToGetOpaque;
     }
 }
+/// set opaque only after a object created successfully
+/// or may cause double free (from constructor & finalizer)
 pub fn setOpaque(obj: c.JSValueConst, @"opaque": ?*anyopaque) !void {
     if (c.JS_SetOpaque(obj, @"opaque") != 0) {
         return error.FailedToSetOpaque;
