@@ -5,12 +5,10 @@
     .minimum_zig_version = "0.14.1",
     .dependencies = .{
         .qjs = .{
-            .url = "./third_party/quickjs-ng",
-            .hash = "qjs-0.10.1-SogNDIVYAACdPU5m6cMEI7NKkcLTqBoZmJ_dyRP1GjDq",
+            .path = "./third_party/quickjs-ng",
         },
         .uv = .{
-            .url = "./third_party/libuv",
-            .hash = "uv-1.51.0-iHmFfCE7AADuChUiFM3OM3ZRPvKSpjzkVBsKshT6YqUS",
+            .path = "./third_party/libuv",
         },
     },
     .paths = .{
