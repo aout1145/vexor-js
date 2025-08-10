@@ -32,7 +32,6 @@ pub fn build(b: *std.Build) void {
     const vexor_compiler = b.addExecutable(.{
         .name = "vexor-compiler",
         .root_module = mod_vexor_compiler,
-        .use_llvm = false,
     });
 
     const mod_vexor_std = b.addModule("vexor", .{
@@ -63,12 +62,10 @@ pub fn build(b: *std.Build) void {
     const run_test_vexor = b.addRunArtifact(b.addTest(.{
         .root_module = mod_vexor,
         .filter = filter,
-        .use_llvm = false,
     }));
     const run_test_vexor_std = b.addRunArtifact(b.addTest(.{
         .root_module = mod_vexor_std,
         .filter = filter,
-        .use_llvm = false,
     }));
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_test_vexor.step);

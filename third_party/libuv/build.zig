@@ -69,8 +69,6 @@ pub fn build(b: *std.Build) void {
             mod_uv.addCMacro("_DARWIN_USE_64_BIT_INODE", "1");
 
             mod_uv.linkSystemLibrary("pthread", .{});
-            mod_uv.linkSystemLibrary("dl", .{});
-            mod_uv.linkSystemLibrary("rt", .{});
         },
         else => unreachable,
     }
