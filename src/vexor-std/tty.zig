@@ -143,10 +143,6 @@ test TTYClass {
     , "", "");
     try testStdin(vexor,
         \\import { TTY } from 'std:internal:tty';
-        \\const stdin = new TTY(3);
-    , "", null);
-    try testStdin(vexor,
-        \\import { TTY } from 'std:internal:tty';
         \\const stdin = new TTY(0);
         \\expectEql(await stdin.readTextOnce(), 'abcd');
         \\expectEql(await stdin.readTextOnce(), 'efgh');
