@@ -243,7 +243,7 @@ pub fn stop(self: *Self) void {
 pub fn deinit(self: *Self) void {
     const err = uv.uv_loop_close(&self.loop);
     if (@import("builtin").is_test and err < 0) {
-        uv.uv_print_all_handles(&self.loop, uv.stderr);
+        uv.uv_print_all_handles(&self.loop, uv.fdopen(2, "w"));
         @panic("uv handles leak");
     }
 
