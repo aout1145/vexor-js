@@ -188,11 +188,11 @@ test TTYClass {
         \\await stdout.tryWriteText("abc\n");
         \\await stdout.tryWrite(Uint8Array.of(97, 98, 99, 10));
     , "abc\nabc\n", "");
-    try testRun(vexor,
+    try testStdout(vexor,
         \\import { TTY, mode } from 'std:internal:tty';
         \\const stdout = new TTY(1);
         \\expectEql(mode.NORMAL, 0);
         \\expectEql(mode.RAW, 1);
         \\stdout.setMode(mode.NORMAL);
-    , "");
+    , "", "");
 }

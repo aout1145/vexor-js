@@ -217,6 +217,10 @@ test TimerClass {
     , "");
     try testRun(vexor,
         \\import { setTimer } from 'std:timer';
+        \\setTimer(() => {}, 1, { daemon: 114514 });
+    , null);
+    try testRun(vexor,
+        \\import { setTimer } from 'std:timer';
         \\setTimer(() => { throw new Error(); }, 1);
     , null);
 }
