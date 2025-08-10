@@ -41,6 +41,8 @@ pub fn build(b: *std.Build) void {
             mod_uv.linkSystemLibrary("dbghelp", .{});
             mod_uv.linkSystemLibrary("ole32", .{});
             mod_uv.linkSystemLibrary("shell32", .{});
+            if (optimize == .Debug)
+                mod_uv.linkSystemLibrary("ucrtbased", .{});
         },
         .linux => {
             mod_uv.addCSourceFiles(.{
@@ -75,6 +77,8 @@ pub fn build(b: *std.Build) void {
 }
 
 const cflags: []const []const u8 = &.{
+    "-fvisibility=hidden",
+    "-fno-strict-aliasing",
     "-std=gnu90",
 };
 
