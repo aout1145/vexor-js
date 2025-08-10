@@ -6,7 +6,7 @@ pub const zig_utils = struct {
     pub fn initBuf(buf: anytype) @import("./c.zig").uv_buf_t {
         return .{
             .base = @ptrCast(@constCast(buf.ptr)),
-            .len = buf.len,
+            .len = @intCast(buf.len),
         };
     }
     pub usingnamespace @import("./error.zig");

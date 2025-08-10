@@ -82,10 +82,7 @@ pub const StreamClass = struct {
                 data.mem = new_mem;
             } else |_| {}
         }
-        buf.* = .{
-            .base = data.mem.ptr + data.buf.r,
-            .len = data.mem.len - data.buf.r,
-        };
+        buf.* = uv.zig_utils.initBuf((data.mem.ptr)[data.buf.r..data.mem.len]);
     }
     fn doReadResolve(sh: *StreamClass, buf: []const u8, err: *?qjs.JSValue) !void {
         // std.debug.print("{any}\n", .{buf});

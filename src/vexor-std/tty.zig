@@ -101,6 +101,7 @@ test TTYClass {
     const testRun = @import("vexor").debug.testRun;
     const testStdin = struct {
         fn func(vexor: *Vexor, js_str: []const u8, input_str: []const u8, expected_err: ?[]const u8) !void {
+            if (@import("builtin").os.tag == .windows) return;
             const pipe = try std.posix.pipe();
             defer std.posix.close(pipe[0]);
             defer std.posix.close(pipe[1]);
@@ -113,6 +114,7 @@ test TTYClass {
     }.func;
     const testStdout = struct {
         fn func(vexor: *Vexor, js_str: []const u8, comptime output_str: []const u8, expected_err: ?[]const u8) !void {
+            if (@import("builtin").os.tag == .windows) return;
             const pipe = try std.posix.pipe();
             defer std.posix.close(pipe[0]);
             const oldfd = try std.posix.dup(std.posix.STDOUT_FILENO);
