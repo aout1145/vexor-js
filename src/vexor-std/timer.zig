@@ -8,14 +8,16 @@ const check = @import("vexor").utils.uv.checkThrow;
 const getVexor = @import("vexor").utils.getVexor;
 
 pub const module_name = "std:timer";
+const internal_name = "std:internal:timer";
 pub fn init(vexor: *Vexor) !void {
     _ = try qjs.zig_utils.newModule(
         vexor.ctx,
-        module_name,
+        internal_name,
         &SleepHandle.func_defs,
         &TimerClass.class_defs,
         .{},
     );
+    try vexor.addModule(module_name, @embedFile("timer.js.compiled"));
 }
 
 const SleepHandle = struct {
@@ -125,7 +127,7 @@ const TimerClass = struct {
         const ret = qjs.JS_Call(th.ctx, th.func, th.obj, 0, null);
         defer qjs.JS_FreeValue(th.ctx, ret);
         if (qjs.JS_IsException(ret)) {
-            qjs.zig_utils.dumpError(th.ctx, vexor.err_writer) catch {};
+            qjs.zig_utils.dumpError(th.ctx, vexor.err_writer.?) catch {};
             vexor.stop();
         }
 
@@ -150,14 +152,11 @@ const TimerClass = struct {
             }
         }
 
-        const obj = try qjs.zig_utils.newObjectFromConstructor(ctx, this_obj);
-        errdefer qjs.JS_FreeValue(ctx, obj);
-
         const th = try smp_allocator.create(TimerClass);
         errdefer smp_allocator.destroy(th);
         th.ctx = ctx;
         th.header = .init(&closeCallback);
-        th.obj = qjs.JS_DupValue(ctx, obj);
+        th.obj = qjs.JS_DupValue(ctx, this_obj);
         errdefer qjs.JS_FreeValue(ctx, th.obj);
         th.func = qjs.JS_DupValue(ctx, func);
         errdefer qjs.JS_FreeValue(ctx, th.func);
@@ -167,9 +166,10 @@ const TimerClass = struct {
         if (is_daemon) uv.uv_unref(@ptrCast(&th.handle));
         try check(ctx, uv.uv_timer_start(&th.handle, callback, @intCast(delay), @intCast(if (is_repeat) delay else 0)));
 
-        try qjs.zig_utils.setOpaque(obj, th.header.ref(TimerClass));
+        try qjs.zig_utils.setOpaque(this_obj, th.header.ref(TimerClass));
         th.handle.data = th.header.ref(TimerClass);
-        return obj;
+
+        return null;
     }
     fn finalizer(_: *qjs.JSRuntime, this_obj: qjs.JSValueConst) void {
         const th = qjs.zig_utils.getOpaque(TimerClass, this_obj) catch unreachable;
@@ -195,28 +195,28 @@ test TimerClass {
     @import("vexor").debug.init(vexor);
     try init(vexor);
     try testRun(vexor,
-        \\import { Timer } from 'std:timer';
+        \\import { setTimer } from 'std:timer';
         \\var count = 0;
-        \\new Timer(() => {
+        \\setTimer(() => {
         \\  expectEql(count, 0);
         \\  count++;
         \\}, 1, { repeat: false });
     , "");
     try testRun(vexor,
-        \\import { Timer } from 'std:timer';
+        \\import { setTimer } from 'std:timer';
         \\var count = 0;
-        \\const timer = new Timer(() => {
+        \\const timer = setTimer(() => {
         \\  timer.close(); 
         \\  expectEql(count, 0);
         \\  count++;
         \\}, 1);
     , "");
     try testRun(vexor,
-        \\import { Timer } from 'std:timer';
-        \\new Timer(() => {}, 1, { daemon: true });
+        \\import { setTimer } from 'std:timer';
+        \\setTimer(() => {}, 1, { daemon: true });
     , "");
     try testRun(vexor,
-        \\import { Timer } from 'std:timer';
-        \\new Timer(() => { throw new Error(); }, 1);
+        \\import { setTimer } from 'std:timer';
+        \\setTimer(() => { throw new Error(); }, 1);
     , null);
 }

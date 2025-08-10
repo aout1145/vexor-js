@@ -16,25 +16,6 @@ pub fn testRun(vexor: *Vexor, js_str: []const u8, expected_err: ?[]const u8) !vo
     }
 }
 
-// WIP
-// /// stdio has limited size(system pipe buffer)
-// pub fn testRunStdio(
-//     vexor: *Vexor,
-//     js_str: []const u8,
-//     stdin: ?[]const u8,
-//     stdout: ?[]const u8,
-//     stderr: ?[]const u8,
-// ) !void {
-//     const pipe = try std.posix.pipe();
-//     defer std.posix.close(pipe[0]);
-//     defer std.posix.close(pipe[1]);
-//     const oldfd = try std.posix.dup(std.posix.STDIN_FILENO);
-//     try std.posix.dup2(pipe[0], std.posix.STDIN_FILENO);
-//     defer std.posix.dup2(oldfd, std.posix.STDIN_FILENO) catch {};
-//     _ = try std.posix.write(pipe[1], stdin);
-//     try vexor.run(js_str, null, std.io.getStdErr().writer().any());
-// }
-
 fn print(ctx: *qjs.JSContext, _: qjs.JSValueConst, js_args: []qjs.JSValueConst) !?qjs.JSValue {
     for (js_args, 0..) |arg, i| {
         if (i != 0) std.debug.print(" ", .{});

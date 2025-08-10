@@ -56,7 +56,7 @@ pub const StreamClass = struct {
     // read functions
     fn readable(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst) !?qjs.JSValue {
         const sh = try qjs.zig_utils.getOpaque(StreamClass, this_obj);
-        return qjs.zig_utils.newValue(ctx, uv.uv_is_readable(sh.handle) != 0);
+        return try qjs.zig_utils.newValue(ctx, uv.uv_is_readable(sh.handle) != 0);
     }
     const ReadMode = enum {
         once,
@@ -202,14 +202,14 @@ pub const StreamClass = struct {
     }
     fn readLine(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst, _: []qjs.JSValueConst) !?qjs.JSValue {
         const read = readFn(.until, .text);
-        var js_args = [_]qjs.JSValue{qjs.zig_utils.newValue(ctx, @as(u8, '\n'))};
+        var js_args = [_]qjs.JSValue{try qjs.zig_utils.newValue(ctx, @as(u8, '\n'))};
         return try read(ctx, this_obj, &js_args);
     }
 
     // write functions
     fn writable(ctx: *qjs.JSContext, this_obj: qjs.JSValueConst) !?qjs.JSValue {
         const sh = try qjs.zig_utils.getOpaque(StreamClass, this_obj);
-        return qjs.zig_utils.newValue(ctx, uv.uv_is_writable(sh.handle) != 0);
+        return try qjs.zig_utils.newValue(ctx, uv.uv_is_writable(sh.handle) != 0);
     }
     const WriteHandle = struct {
         ctx: *qjs.JSContext,

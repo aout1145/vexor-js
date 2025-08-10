@@ -8,14 +8,16 @@ const check = @import("vexor").utils.uv.checkThrow;
 const getVexor = @import("vexor").utils.getVexor;
 
 pub const module_name = "std:tty";
+const internal_name = "std:internal:tty";
 pub fn init(vexor: *Vexor) !void {
     _ = try qjs.zig_utils.newModule(
         vexor.ctx,
-        module_name,
+        internal_name,
         &[_]qjs.zig_utils.FuncDef{},
         &TTYClass.class_defs,
         .{TTYClass.value_def},
     );
+    try vexor.addModule(module_name, @embedFile("tty.js.compiled"));
 }
 
 const TTYClass = struct {
@@ -35,9 +37,6 @@ const TTYClass = struct {
         const args = try qjs.zig_utils.getArgs(ctx, js_args, &[_]type{uv.uv_file});
         const fd = args[0];
 
-        const obj = try qjs.zig_utils.newObjectFromConstructor(ctx, this_obj);
-        errdefer qjs.JS_FreeValue(ctx, obj);
-
         const th = try smp_allocator.create(TTYClass);
         errdefer smp_allocator.destroy(th);
         try th.stream.init(Vexor.UVDataHeader.init(&closeCallback), ctx, @ptrCast(&th.handle));
@@ -45,9 +44,10 @@ const TTYClass = struct {
 
         try check(ctx, uv.uv_tty_init(&vexor.loop, &th.handle, fd, 0));
 
-        try qjs.zig_utils.setOpaque(obj, th.stream.header.ref(TTYClass));
+        try qjs.zig_utils.setOpaque(this_obj, th.stream.header.ref(TTYClass));
         th.handle.data = th.stream.header.ref(TTYClass);
-        return obj;
+
+        return null;
     }
     fn finalizer(_: *qjs.JSRuntime, this_obj: qjs.JSValueConst) void {
         const th = qjs.zig_utils.getOpaque(TTYClass, this_obj) catch unreachable;
@@ -71,7 +71,7 @@ const TTYClass = struct {
         var wndsize: WindowSize = undefined;
         try check(ctx, uv.uv_tty_get_winsize(&th.handle, &wndsize.width, &wndsize.height));
 
-        return qjs.zig_utils.newValue(ctx, wndsize);
+        return try qjs.zig_utils.newValue(ctx, wndsize);
     }
 
     const class_defs = [_]qjs.zig_utils.ClassDef{
@@ -86,7 +86,7 @@ const TTYClass = struct {
         ),
     };
     const value_def = .{
-        .Mode = enum(uv.uv_tty_mode_t) {
+        .mode = enum(uv.uv_tty_mode_t) {
             NORMAL = uv.UV_TTY_MODE_NORMAL,
             RAW = uv.UV_TTY_MODE_RAW,
         },
@@ -134,25 +134,25 @@ test TTYClass {
     @import("vexor").debug.init(vexor);
     try init(vexor);
     try testStdin(vexor,
-        \\import { TTY } from 'std:tty';
+        \\import { TTY } from 'std:internal:tty';
         \\const stdin = new TTY(0);
         \\expect(stdin.readable);
     , "", "");
     try testStdin(vexor,
-        \\import { TTY } from 'std:tty';
+        \\import { TTY } from 'std:internal:tty';
         \\const stdin = new TTY(0);
         \\expectEql(await stdin.readTextOnce(), 'abcd');
         \\expectEql(await stdin.readTextOnce(), 'efgh');
     , "abcdefgh", "");
     try testStdin(vexor,
-        \\import { TTY } from 'std:tty';
+        \\import { TTY } from 'std:internal:tty';
         \\const stdin = new TTY(0);
         \\expectEql(await stdin.readText(3), 'abc');
         \\expectEql(await stdin.readText(1), 'd');
         \\expectEql(await stdin.readText(5), 'efgh\n');
     , "abcdefgh\n", "");
     try testStdin(vexor,
-        \\import { TTY } from 'std:tty';
+        \\import { TTY } from 'std:internal:tty';
         \\const stdin = new TTY(0);
         \\expectEql(await stdin.readTextUntil(32), 'abcde ');
         \\expectEql(await stdin.readTextUntil(32), 'uvw ');
@@ -160,36 +160,36 @@ test TTYClass {
         \\expectEql(await stdin.readLine(), 'hellox\n');
     , "abcde uvw xyz\nhellox\n", "");
     try testStdin(vexor,
-        \\import { TTY } from 'std:tty';
+        \\import { TTY } from 'std:internal:tty';
         \\const stdin = new TTY(0);
         \\const result = await stdin.read(11);
         \\expectEql(result.length, 11);
         \\expectEql(result.toString(), '104,101,108,108,111,32,119,111,114,108,100');
     , "hello world", "");
     try testStdin(vexor,
-        \\import { TTY } from 'std:tty';
+        \\import { TTY } from 'std:internal:tty';
         \\const stdin = new TTY(0);
         \\stdin.read(7);
         \\stdin.close();
         \\stdin.close();
     , "hello world", null);
     try testStdout(vexor,
-        \\import { TTY } from 'std:tty';
+        \\import { TTY } from 'std:internal:tty';
         \\const stdout = new TTY(1);
         \\await stdout.writeText("abc\n");
         \\await stdout.write(Uint8Array.of(97, 98, 99, 10));
     , "abc\nabc\n", "");
     try testStdout(vexor,
-        \\import { TTY } from 'std:tty';
+        \\import { TTY } from 'std:internal:tty';
         \\const stdout = new TTY(1);
         \\await stdout.tryWriteText("abc\n");
         \\await stdout.tryWrite(Uint8Array.of(97, 98, 99, 10));
     , "abc\nabc\n", "");
     try testRun(vexor,
-        \\import { TTY, Mode } from 'std:tty';
+        \\import { TTY, mode } from 'std:internal:tty';
         \\const stdout = new TTY(1);
-        \\expectEql(Mode.NORMAL, 0);
-        \\expectEql(Mode.RAW, 1);
-        \\stdout.setMode(Mode.NORMAL);
+        \\expectEql(mode.NORMAL, 0);
+        \\expectEql(mode.RAW, 1);
+        \\stdout.setMode(mode.NORMAL);
     , "");
 }

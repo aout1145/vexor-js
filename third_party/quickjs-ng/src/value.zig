@@ -2,18 +2,30 @@ const std = @import("std");
 const c = @import("./c.zig");
 
 // value utils
-pub fn newValue(ctx: *c.JSContext, value: anytype) c.JSValue {
+pub fn newValue(ctx: *c.JSContext, value: anytype) !c.JSValue {
     const T = @TypeOf(value);
     if (@typeInfo(T) == .@"struct") {
         const obj = c.JS_NewObject(ctx);
+        errdefer c.JS_FreeValue(ctx, obj);
+        if (!c.JS_IsObject(obj)) return error.FailedToNewObject;
         inline for (comptime std.meta.fieldNames(T)) |field_name| {
-            _ = c.JS_SetPropertyStr(ctx, obj, field_name, newValue(ctx, @field(value, field_name)));
+            const val = try newValue(ctx, @field(value, field_name));
+            errdefer c.JS_FreeValue(ctx, val);
+            if (c.JS_SetPropertyStr(ctx, obj, field_name, val) == -1) {
+                return error.FailedToSetPropertyStr;
+            }
         }
         return obj;
     } else if (T == type and @typeInfo(value) == .@"enum") {
         const obj = c.JS_NewObject(ctx);
+        errdefer c.JS_FreeValue(ctx, obj);
+        if (!c.JS_IsObject(obj)) return error.FailedToNewObject;
         inline for (comptime std.meta.fields(value)) |field| {
-            _ = c.JS_SetPropertyStr(ctx, obj, field.name, newValue(ctx, @as(i32, field.value)));
+            const val = try newValue(ctx, @as(i32, field.value));
+            errdefer c.JS_FreeValue(ctx, val);
+            if (c.JS_SetPropertyStr(ctx, obj, field.name, val) == -1) {
+                return error.FailedToSetPropertyStr;
+            }
         }
         return obj;
     } else return switch (T) {
@@ -25,7 +37,12 @@ pub fn newValue(ctx: *c.JSContext, value: anytype) c.JSValue {
             .u = .{ .int32 = @intFromBool(value) },
             .tag = c.JS_TAG_BOOL,
         },
-        []const u8, []u8 => c.JS_NewStringLen(ctx, value.ptr, value.len),
+        []const u8, []u8 => blk: {
+            const obj = c.JS_NewStringLen(ctx, value.ptr, value.len);
+            errdefer c.JS_FreeValue(ctx, obj);
+            if (!c.JS_IsString(obj)) break :blk error.FailedToNewStringLen;
+            break :blk obj;
+        },
         else => @compileError("unsupported type"),
     };
 }

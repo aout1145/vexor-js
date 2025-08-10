@@ -13,6 +13,18 @@ pub fn newModule(
         fn inner_func(ctx2: ?*c.JSContext, m: ?*c.JSModuleDef) callconv(.c) c_int {
             var ret: c_int = 0;
             inline for (class_defs) |def| {
+                const ctor = struct {
+                    fn ctor(ctx3: ?*c.JSContext, _: c.JSValue, argc: c_int, argv: [*c]c.JSValue, class_id: c_int) callconv(.c) c.JSValue {
+                        const this_obj = c.JS_NewObjectClass(ctx3, class_id);
+                        if (c.JS_IsException(this_obj)) return this_obj;
+                        const ret2 = value.wrapFunctionReturnValue(ctx3, def.constructor(ctx3.?, this_obj, argv[0..@intCast(argc)]));
+                        if (c.JS_IsException(ret2)) {
+                            c.JS_FreeValue(ctx3, this_obj);
+                            return ret2;
+                        }
+                        return this_obj;
+                    }
+                }.ctor;
                 // register class & id
                 var class_id: c.JSClassID = 0;
                 _ = c.JS_NewClassID(c.JS_GetRuntime(ctx2), &class_id);
@@ -23,19 +35,21 @@ pub fn newModule(
                 // create proto & constructor
                 const proto = c.JS_NewObject(ctx2);
                 ret |= c.JS_SetPropertyFunctionList(ctx2, proto, def.func_defs.ptr, def.func_defs.len);
-                const constructor = c.JS_NewCFunction2(ctx2, value.wrapFunction(def.constructor), def.name.ptr, 0, c.JS_CFUNC_constructor, 0);
+                const constructor = c.JS_NewCFunction2(ctx2, @ptrCast(&ctor), def.name.ptr, 0, c.JS_CFUNC_constructor_magic, @intCast(class_id));
                 c.JS_SetConstructor(ctx2, constructor, proto);
                 c.JS_SetClassProto(ctx2, class_id, proto);
                 ret |= c.JS_SetModuleExport(ctx2, m, def.name.ptr, constructor);
-                // save class_id in constructor
-                ret |= c.JS_DefinePropertyValueStr(ctx2, constructor, class_id_prop_name, value.newValue(ctx2.?, class_id), 0);
             }
             inline for (value_defs) |value_def| {
                 inline for (comptime std.meta.fieldNames(@TypeOf(value_def))) |field_name| {
-                    const val = value.newValue(ctx2.?, @field(value_def, field_name));
-                    ret |= c.JS_SetModuleExport(ctx2, m, field_name, val);
+                    if (value.newValue(ctx2.?, @field(value_def, field_name))) |val| {
+                        ret |= c.JS_SetModuleExport(ctx2, m, field_name, val);
+                    } else |_| {
+                        ret |= -1;
+                    }
                 }
             }
+            std.debug.assert(ret == 0);
             return ret | c.JS_SetModuleExportList(ctx2, m, func_defs.ptr, @intCast(func_defs.len));
         }
     }.inner_func;
@@ -65,7 +79,6 @@ pub fn setPropertyFunctionList(ctx: *c.JSContext, obj: c.JSValue, comptime tab: 
     return c.JS_SetPropertyFunctionList(ctx, obj, tab.ptr, @intCast(tab.len));
 }
 
-pub const class_id_prop_name = "__vexor_class_id__";
 pub const ClassDef = struct {
     pub const Finalizer = fn (*c.JSRuntime, c.JSValueConst) void;
     pub const JSFinalizer = fn (rt: ?*c.JSRuntime, val: c.JSValueConst) callconv(.c) void;
@@ -81,17 +94,6 @@ pub const ClassDef = struct {
     finalizer: Finalizer,
     func_defs: []const FuncDef,
 };
-pub fn getClassID(ctx: *c.JSContext, constructor: c.JSValueConst) !c.JSClassID {
-    const prop = c.JS_GetPropertyStr(ctx, constructor, class_id_prop_name);
-    defer c.JS_FreeValue(ctx, prop);
-    return try value.castValue(c.JSClassID, ctx, prop);
-}
-pub fn newObjectFromConstructor(ctx: *c.JSContext, constructor: c.JSValueConst) !c.JSValue {
-    const obj = c.JS_NewObjectClass(ctx, @intCast(try getClassID(ctx, constructor)));
-    errdefer c.JS_FreeValue(ctx, obj);
-    if (c.JS_IsException(obj)) return error.FailedToNewObjectClass;
-    return obj;
-}
 pub fn defClass(comptime name: []const u8, constructor: value.Function, finalizer: ClassDef.Finalizer, func_defs: []const FuncDef) ClassDef {
     return .{
         .name = name,

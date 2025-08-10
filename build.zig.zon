@@ -6,7 +6,7 @@
     .dependencies = .{
         .qjs = .{
             .url = "./third_party/quickjs-ng",
-            .hash = "qjs-0.10.1-SogNDGNVAABK8p33aYCc1p6Hc9OILZVglsaQetshz0Kd",
+            .hash = "qjs-0.10.1-SogNDIVYAACdPU5m6cMEI7NKkcLTqBoZmJ_dyRP1GjDq",
         },
         .uv = .{
             .url = "./third_party/libuv",
