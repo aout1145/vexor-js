@@ -43,10 +43,10 @@ const TTYClass = struct {
         errdefer th.stream.deinit();
 
         try check(ctx, uv.uv_tty_init(&vexor.loop, &th.handle, fd, 0));
-
-        try qjs.zig_utils.setOpaque(this_obj, th.stream.header.ref(TTYClass));
+        errdefer uv.uv_close(@ptrCast(&th.handle), null);
         th.handle.data = th.stream.header.ref(TTYClass);
 
+        try qjs.zig_utils.setOpaque(this_obj, th.stream.header.ref(TTYClass));
         return null;
     }
     fn finalizer(_: *qjs.JSRuntime, this_obj: qjs.JSValueConst) void {

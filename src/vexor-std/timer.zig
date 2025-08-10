@@ -163,12 +163,11 @@ const TimerClass = struct {
 
         try check(ctx, uv.uv_timer_init(&vexor.loop, &th.handle));
         errdefer uv.uv_close(@ptrCast(&th.handle), null);
+        th.handle.data = th.header.ref(TimerClass);
         if (is_daemon) uv.uv_unref(@ptrCast(&th.handle));
         try check(ctx, uv.uv_timer_start(&th.handle, callback, @intCast(delay), @intCast(if (is_repeat) delay else 0)));
 
         try qjs.zig_utils.setOpaque(this_obj, th.header.ref(TimerClass));
-        th.handle.data = th.header.ref(TimerClass);
-
         return null;
     }
     fn finalizer(_: *qjs.JSRuntime, this_obj: qjs.JSValueConst) void {
