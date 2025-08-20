@@ -3,7 +3,7 @@ const qjs = @import("qjs");
 
 const Vexor = @import("./vexor.zig");
 
-/// expected_err: null means any
+/// expected_err: null means not empty
 pub fn testRun(vexor: *Vexor, js_str: []const u8, expected_err: ?[]const u8) !void {
     var buffer: [65536]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
@@ -11,6 +11,11 @@ pub fn testRun(vexor: *Vexor, js_str: []const u8, expected_err: ?[]const u8) !vo
     if (expected_err) |expected| {
         if (!std.mem.eql(u8, expected, stream.getWritten())) {
             std.debug.print("expect:\n{s}\noutput:\n{s}\n", .{ expected, stream.getWritten() });
+            @panic("testRun failed");
+        }
+    } else {
+        if (stream.getWritten().len == 0) {
+            std.debug.print("expect:\n(not empty)\noutput:\n{s}\n", .{stream.getWritten()});
             @panic("testRun failed");
         }
     }
@@ -27,15 +32,21 @@ fn print(ctx: *qjs.JSContext, _: qjs.JSValueConst, js_args: []qjs.JSValueConst) 
     return qjs.zig_utils.values.undefined();
 }
 fn expect(ctx: *qjs.JSContext, _: qjs.JSValueConst, js_args: []qjs.JSValueConst) !?qjs.JSValue {
-    for (js_args) |arg| {
-        std.testing.expect(try qjs.zig_utils.castValue(bool, ctx, arg)) catch @panic("expect failed");
-    }
+    std.testing.expect(try qjs.zig_utils.castValue(bool, ctx, js_args[0])) catch {
+        if (js_args.len >= 2) {
+            std.debug.print("expect: {s}\n", .{try qjs.zig_utils.toString(ctx, js_args[1])});
+        }
+        @panic("expect failed");
+    };
     return null;
 }
 fn expectEql(ctx: *qjs.JSContext, _: qjs.JSValueConst, js_args: []qjs.JSValueConst) !?qjs.JSValue {
     if (!qjs.JS_IsStrictEqual(ctx, js_args[0], js_args[1])) {
         const str1 = try qjs.zig_utils.toString(ctx, js_args[0]);
         const str2 = try qjs.zig_utils.toString(ctx, js_args[1]);
+        if (js_args.len >= 3) {
+            std.debug.print("expect: {s}\n", .{try qjs.zig_utils.toString(ctx, js_args[2])});
+        }
         std.debug.print("op1:\n{s}\nop2:\n{s}\n", .{ str1, str2 });
         @panic("expectEql failed");
     }

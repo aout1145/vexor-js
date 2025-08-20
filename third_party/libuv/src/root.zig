@@ -9,6 +9,9 @@ pub const zig_utils = struct {
             .len = @intCast(buf.len),
         };
     }
+    pub fn bufToSlice(buf: @import("./c.zig").uv_buf_t) []u8 {
+        return buf.base[0..buf.len];
+    }
     pub usingnamespace @import("./error.zig");
     pub usingnamespace @import("./alloc.zig");
 };

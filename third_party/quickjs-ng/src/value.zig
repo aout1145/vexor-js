@@ -32,18 +32,19 @@ pub fn newValue(ctx: *c.JSContext, value: anytype) !c.JSValue {
         i8, i16, i32, c_int => c.JS_NewInt32(ctx, value),
         u8, u16, u32, c_uint => c.JS_NewUint32(ctx, value),
         i64 => c.JS_NewInt64(ctx, value),
-        f64 => c.JS_NewFloat64(ctx, value),
+        u64, usize, isize, c_long, c_ulong => c.JS_NewInt64(ctx, @intCast(value)),
+        f32, f64 => c.JS_NewFloat64(ctx, value),
         bool => .{ // marco translated wrongly
             .u = .{ .int32 = @intFromBool(value) },
             .tag = c.JS_TAG_BOOL,
         },
-        []const u8, []u8 => blk: {
+        []const u8, []u8, [:0]const u8, [:0]u8 => blk: {
             const obj = c.JS_NewStringLen(ctx, value.ptr, value.len);
             errdefer c.JS_FreeValue(ctx, obj);
             if (!c.JS_IsString(obj)) break :blk error.FailedToNewStringLen;
             break :blk obj;
         },
-        else => @compileError("unsupported type"),
+        else => @compileError("unsupported type: " ++ @typeName(T)),
     };
 }
 /// an exception will be thrown when a error returned
@@ -66,7 +67,7 @@ pub fn castValue(T: type, ctx: *c.JSContext, val: c.JSValueConst) !T {
                 u32, c_uint => try check(c.JS_ToUint32(ctx, &ret, val)),
                 i64 => try check(c.JS_ToInt64(ctx, &ret, val)),
                 f64 => try check(c.JS_ToFloat64(ctx, &ret, val)),
-                else => @compileError("unsupported type"),
+                else => @compileError("unsupported type: " ++ @typeName(T)),
             }
             return ret;
         },
@@ -81,7 +82,7 @@ pub fn castValue(T: type, ctx: *c.JSContext, val: c.JSValueConst) !T {
             c.JSValue => {
                 return val;
             },
-            else => @compileError("unsupported type"),
+            else => @compileError("unsupported type: " ++ @typeName(T)),
         },
     }
 }
@@ -159,7 +160,11 @@ pub fn wrapFunctionReturnValue(ctx: ?*c.JSContext, value: anyerror!?c.JSValue) c
 pub fn wrapFunction(func: Function) JSFunction {
     return struct {
         fn js_func(ctx: ?*c.JSContext, this_obj: c.JSValueConst, argc: c_int, argv: [*c]c.JSValueConst) callconv(.c) c.JSValue {
-            return wrapFunctionReturnValue(ctx, func(ctx orelse unreachable, this_obj, argv[0..@intCast(argc)]));
+            if (argc != 0) {
+                return wrapFunctionReturnValue(ctx, func(ctx orelse unreachable, this_obj, argv[0..@intCast(argc)]));
+            } else {
+                return wrapFunctionReturnValue(ctx, func(ctx orelse unreachable, this_obj, &[0]c.JSValueConst{}));
+            }
         }
     }.js_func;
 }
@@ -169,6 +174,9 @@ pub fn newFunction(arg_ctx: *c.JSContext, func: Function, cproto: comptime_int, 
     return c.JS_NewCFunction2(arg_ctx, &wrapFunction(func), symname.ptr, 0, cproto, 0);
 }
 
+pub fn throwTooFewArgs(ctx: *c.JSContext, min_args: usize, passed_args: usize) c.JSValue {
+    return c.JS_ThrowReferenceError(ctx, "at least %d arguments required, but %d passed", min_args, passed_args);
+}
 fn removeOptional(T: type) type {
     const type_info = @typeInfo(T);
     return switch (type_info) {
@@ -184,7 +192,7 @@ pub fn getArgs(ctx: *c.JSContext, js_args: []c.JSValueConst, types: []const type
         min_args += 1;
     }
     if (js_args.len < min_args) {
-        _ = c.JS_ThrowReferenceError(ctx, "at least %d arguments required, but %d passed", min_args, js_args.len);
+        _ = throwTooFewArgs(ctx, min_args, js_args.len);
         return error.TooFewArgumentsPassed;
     }
     var casted_args: usize = 0;
@@ -211,37 +219,87 @@ pub fn getArgs(ctx: *c.JSContext, js_args: []c.JSValueConst, types: []const type
 pub const Promise = struct {
     resolve_func: c.JSValue,
     reject_func: c.JSValue,
+    backtrace: ?c.JSValue,
+    is_freed: bool,
     pub fn free(self: *Promise, ctx: *c.JSContext) void {
+        if (self.is_freed) return;
+        self.is_freed = true;
         c.JS_FreeValue(ctx, self.resolve_func);
         c.JS_FreeValue(ctx, self.reject_func);
+        if (self.backtrace) |backtrace| c.JS_FreeValue(ctx, backtrace);
     }
     /// val will be released
-    pub fn resolve(self: *Promise, ctx: *c.JSContext, optional_val: ?c.JSValue) void {
+    /// JS_EXCEPTION is allowed to pass
+    pub fn resolve(self: *Promise, ctx: *c.JSContext, error_optional_val: ?anyerror!c.JSValue) void {
+        std.debug.assert(self.is_freed == false);
         var ret: c.JSValue = undefined;
-        if (optional_val) |val| {
-            ret = c.JS_Call(ctx, self.resolve_func, values.undefined(), 1, @constCast(@ptrCast(&val)));
-            defer c.JS_FreeValue(ctx, val);
+        defer c.JS_FreeValue(ctx, ret);
+        if (error_optional_val) |error_val| {
+            if (error_val) |val| {
+                defer c.JS_FreeValue(ctx, val);
+                if (!c.JS_IsException(val)) {
+                    ret = c.JS_Call(ctx, self.resolve_func, values.undefined(), 1, @constCast(@ptrCast(&val)));
+                } else {
+                    @branchHint(.unlikely);
+                    var obj: c.JSValue = undefined;
+                    defer c.JS_FreeValue(ctx, obj);
+                    if (c.JS_HasException(ctx)) {
+                        obj = c.JS_GetException(ctx);
+                    } else {
+                        obj = c.JS_NewInternalError(ctx, "FailedToResolvePromise");
+                    }
+                    ret = c.JS_Call(ctx, self.reject_func, values.undefined(), 1, @constCast(@ptrCast(&obj)));
+                }
+            } else |e| {
+                @branchHint(.unlikely);
+                var obj: c.JSValue = undefined;
+                defer c.JS_FreeValue(ctx, obj);
+                if (c.JS_HasException(ctx)) {
+                    obj = c.JS_GetException(ctx);
+                } else {
+                    obj = c.JS_NewInternalError(ctx, "%s", @errorName(e).ptr);
+                }
+                ret = c.JS_Call(ctx, self.reject_func, values.undefined(), 1, @constCast(@ptrCast(&obj)));
+            }
         } else {
             ret = c.JS_Call(ctx, self.resolve_func, values.undefined(), 0, null);
         }
-        defer c.JS_FreeValue(ctx, ret);
+        self.free(ctx);
     }
     /// val will be released
     pub fn reject(self: *Promise, ctx: *c.JSContext, val: c.JSValue) void {
+        std.debug.assert(self.is_freed == false);
         defer c.JS_FreeValue(ctx, val);
+        _ = c.JS_SetPropertyStr(ctx, val, "stack", self.backtrace.?);
+        self.backtrace = null;
         const ret = c.JS_Call(ctx, self.reject_func, values.undefined(), 1, @constCast(@ptrCast(&val)));
         defer c.JS_FreeValue(ctx, ret);
+        self.free(ctx);
     }
 };
 pub fn newPromise(ctx: *c.JSContext, promise: *Promise) !c.JSValue {
     var resolving_funcs: [2]c.JSValue = undefined;
+    errdefer {
+        c.JS_FreeValue(ctx, resolving_funcs[0]);
+        c.JS_FreeValue(ctx, resolving_funcs[1]);
+    }
     const result_promise = c.JS_NewPromiseCapability(ctx, &resolving_funcs);
-    if (!c.JS_IsPromise(result_promise)) return error.FailedToCreatePromise;
+    if (!c.JS_IsPromise(result_promise)) return error.FailedToNewPromiseCapability;
     promise.* = .{
         .resolve_func = resolving_funcs[0],
         .reject_func = resolving_funcs[1],
+        .backtrace = try getStacktrace(ctx),
+        .is_freed = false,
     };
     return result_promise;
+}
+pub fn getStacktrace(ctx: *c.JSContext) !c.JSValue {
+    const err_obj = c.JS_NewError(ctx);
+    defer c.JS_FreeValue(ctx, err_obj);
+    if (!c.JS_IsError(ctx, err_obj)) return error.FailedToNewError;
+    const backtrace = c.JS_GetPropertyStr(ctx, err_obj, "stack");
+    errdefer c.JS_FreeValue(ctx, backtrace);
+    return backtrace;
 }
 
 // special value utils

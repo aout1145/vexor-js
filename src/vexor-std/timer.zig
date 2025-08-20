@@ -106,9 +106,11 @@ const TimerClass = struct {
     handle: uv.uv_timer_t,
     obj: qjs.JSValue,
     func: qjs.JSValue,
+    stack: qjs.JSValue,
 
     fn closeCallback(handle: [*c]uv.uv_handle_t) callconv(.c) void {
         const th = uv.zig_utils.getData(TimerClass, handle);
+        qjs.JS_FreeValue(th.ctx, th.stack);
         qjs.JS_FreeValue(th.ctx, th.func);
         qjs.JS_FreeValue(th.ctx, th.obj);
         th.header.unref(TimerClass, smp_allocator);
@@ -127,8 +129,10 @@ const TimerClass = struct {
         const ret = qjs.JS_Call(th.ctx, th.func, th.obj, 0, null);
         defer qjs.JS_FreeValue(th.ctx, ret);
         if (qjs.JS_IsException(ret)) {
-            qjs.zig_utils.dumpError(th.ctx, vexor.err_writer.?) catch {};
-            vexor.stop();
+            const obj = qjs.JS_GetException(th.ctx);
+            defer qjs.JS_FreeValue(th.ctx, obj);
+            _ = qjs.JS_SetPropertyStr(th.ctx, obj, "stack", qjs.JS_DupValue(th.ctx, th.stack));
+            vexor.dumpStopVal(obj) catch {};
         }
 
         if (uv.uv_timer_get_repeat(handle) == 0) {
@@ -160,6 +164,8 @@ const TimerClass = struct {
         errdefer qjs.JS_FreeValue(ctx, th.obj);
         th.func = qjs.JS_DupValue(ctx, func);
         errdefer qjs.JS_FreeValue(ctx, th.func);
+        th.stack = try qjs.zig_utils.getStacktrace(ctx);
+        errdefer qjs.JS_FreeValue(ctx, th.stack);
 
         try check(ctx, uv.uv_timer_init(&vexor.loop, &th.handle));
         errdefer uv.uv_close(@ptrCast(&th.handle), null);

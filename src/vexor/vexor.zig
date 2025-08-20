@@ -64,10 +64,12 @@ module_defs: std.StringHashMapUnmanaged([]const u8),
 // init when run
 check: uv.uv_check_t,
 err_writer: ?std.io.AnyWriter,
+has_uncaught_error: ?bool,
 
 pub fn init() !*Self {
     const self = try smp_allocator.create(Self);
     self.err_writer = null;
+    self.has_uncaught_error = null;
     self.module_defs = std.StringHashMapUnmanaged([]const u8){};
 
     self.rt = (if (@import("builtin").is_test) qjs.JS_NewRuntime2(&qjs.zig_utils.malloc_functions, @constCast(&std.testing.allocator)) else qjs.JS_NewRuntime()) orelse unreachable;
@@ -131,13 +133,10 @@ fn walkCallback(handle: [*c]uv.uv_handle_t, _: ?*anyopaque) callconv(.c) void {
         uv.uv_close(handle, header.close_cb);
     }
 }
-fn promiseRejectionTracker(ctx: ?*qjs.JSContext, _: qjs.JSValueConst, reason: qjs.JSValueConst, is_handled: bool, @"opaque": ?*anyopaque) callconv(.c) void {
+fn promiseRejectionTracker(_: ?*qjs.JSContext, _: qjs.JSValueConst, reason: qjs.JSValueConst, is_handled: bool, @"opaque": ?*anyopaque) callconv(.c) void {
     // std.debug.print("promiseRejectionTracker {}\n", .{is_handled});
     const self: *Self = @ptrCast(@alignCast(@"opaque"));
-    if (!is_handled) {
-        qjs.zig_utils.dumpErrorVal(ctx orelse unreachable, reason, self.err_writer.?) catch {};
-        self.stop();
-    }
+    if (!is_handled) self.dumpStopVal(reason) catch {};
 }
 fn moduleLoader(ctx: ?*qjs.JSContext, c_name: [*c]const u8, @"opaque": ?*anyopaque) callconv(.c) ?*qjs.JSModuleDef {
     const self: *Self = @ptrCast(@alignCast(@"opaque"));
@@ -166,11 +165,13 @@ pub fn addModule(self: *Self, name: []const u8, bytecode: []const u8) !void {
 fn runBytecodeObj(self: *Self, obj: qjs.JSValue, err_writer: std.io.AnyWriter) !void {
     self.err_writer = err_writer;
     defer self.err_writer = null;
+    self.has_uncaught_error = false;
+    defer self.has_uncaught_error = null;
     qjs.JS_SetRuntimeOpaque(self.rt, self);
     defer qjs.JS_SetRuntimeOpaque(self.rt, null);
     qjs.JS_SetContextOpaque(self.ctx, self);
     defer qjs.JS_SetContextOpaque(self.ctx, null);
-    qjs.JS_SetHostPromiseRejectionTracker(self.rt, null, null);
+    qjs.JS_SetHostPromiseRejectionTracker(self.rt, &promiseRejectionTracker, self);
     defer qjs.JS_SetHostPromiseRejectionTracker(self.rt, null, null);
     qjs.JS_SetModuleLoaderFunc(self.rt, null, moduleLoader, self);
     defer qjs.JS_SetModuleLoaderFunc(self.rt, null, null, null);
@@ -182,14 +183,13 @@ fn runBytecodeObj(self: *Self, obj: qjs.JSValue, err_writer: std.io.AnyWriter) !
     if (!qjs.JS_IsException(ret)) switch (qjs.JS_PromiseState(self.ctx, ret)) {
         // return value is a promise, so we get its result
         qjs.JS_PROMISE_FULFILLED, qjs.JS_PROMISE_REJECTED, qjs.JS_PROMISE_PENDING => |state| {
-            if (state == qjs.JS_PROMISE_REJECTED) {
-                const val = qjs.JS_PromiseResult(self.ctx, ret);
-                defer qjs.JS_FreeValue(self.ctx, val);
-                try qjs.zig_utils.dumpErrorVal(self.ctx, val, self.err_writer.?);
-            }
-            qjs.JS_SetHostPromiseRejectionTracker(self.rt, &promiseRejectionTracker, self);
             if (state == qjs.JS_PROMISE_PENDING) {
                 _ = try qjs.zig_utils.executePendingJob(self.ctx);
+            }
+            if (qjs.JS_PromiseState(self.ctx, ret) == qjs.JS_PROMISE_REJECTED) {
+                const val = qjs.JS_PromiseResult(self.ctx, ret);
+                defer qjs.JS_FreeValue(self.ctx, val);
+                try self.dumpStopVal(val);
             }
             const uvcheck = @import("uv").zig_utils.check;
             // init uv check
@@ -208,7 +208,9 @@ fn runBytecodeObj(self: *Self, obj: qjs.JSValue, err_writer: std.io.AnyWriter) !
             try uvcheck(uv.uv_tty_reset_mode());
         },
         else => unreachable,
-    };
+    } else {
+        try self.dumpStop();
+    }
 }
 pub fn run(self: *Self, str: []const u8, filename: ?[]const u8, err_writer: std.io.AnyWriter) !void {
     qjs.JS_SetModuleLoaderFunc(self.rt, null, moduleLoader, self);
@@ -239,6 +241,18 @@ pub fn runBytecode(self: *Self, bytecode: []const u8, err_writer: std.io.AnyWrit
 pub fn stop(self: *Self) void {
     uv.uv_stop(&self.loop);
 }
+pub fn dumpStopVal(self: *Self, val: qjs.JSValueConst) !void {
+    defer self.has_uncaught_error = true;
+    self.stop();
+    if (!self.has_uncaught_error.?) {
+        try qjs.zig_utils.dumpErrorVal(self.ctx, val, self.err_writer.?);
+    }
+}
+pub fn dumpStop(self: *Self) !void {
+    const val = qjs.JS_GetException(self.ctx);
+    defer qjs.JS_FreeValue(self.ctx, val);
+    try self.dumpStopVal(val);
+}
 
 pub fn deinit(self: *Self) void {
     const err = uv.uv_loop_close(&self.loop);
@@ -260,6 +274,10 @@ test run {
     defer vexor.deinit();
     try testRun(vexor, "", "");
     try testRun(vexor, "axy();", null);
+    try testRun(vexor,
+        \\async function x() { throw new Error(); }
+        \\x();
+    , null);
 }
 
 test compile {
