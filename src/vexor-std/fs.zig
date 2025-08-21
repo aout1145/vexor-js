@@ -835,35 +835,35 @@ test fs {
             \\
             \\await unlink(filePath);
         , "");
+        try testRun(vexor,
+            \\import { mkdtemp, symlink, readlink, realpath, lstat, unlink, exists, open, constants } from 'std:fs';
+            \\
+            \\const tmpDir = await mkdtemp(tmpdir + '/symlink-XXXXXX');
+            \\const targetPath = tmpDir + '/target';
+            \\const linkPath = tmpDir + '/link';
+            \\
+            \\const file = await open(targetPath, 'w');
+            \\await file.close();
+            \\
+            \\// Create symlink
+            \\await symlink(targetPath, linkPath);
+            \\expect(await exists(linkPath), 'symlink created');
+            \\
+            \\// Read link
+            \\const linkTarget = await readlink(linkPath);
+            \\expect(linkTarget.endsWith('/target'), 'symlink target correct');
+            \\
+            \\// Get real path
+            \\const real = await realpath(linkPath);
+            \\expect(real.endsWith('/target'), 'realpath resolves');
+            \\
+            \\// Check link type
+            \\const lstats = await lstat(linkPath);
+            \\expect((lstats.mode & constants.S_IFMT) === constants.S_IFLNK, 'symlink type');
+            \\
+            \\await unlink(linkPath);
+        , "");
     }
-    try testRun(vexor,
-        \\import { mkdtemp, symlink, readlink, realpath, lstat, unlink, exists, open, constants } from 'std:fs';
-        \\
-        \\const tmpDir = await mkdtemp(tmpdir + '/symlink-XXXXXX');
-        \\const targetPath = tmpDir + '/target';
-        \\const linkPath = tmpDir + '/link';
-        \\
-        \\const file = await open(targetPath, 'w');
-        \\await file.close();
-        \\
-        \\// Create symlink
-        \\await symlink(targetPath, linkPath);
-        \\expect(await exists(linkPath), 'symlink created');
-        \\
-        \\// Read link
-        \\const linkTarget = await readlink(linkPath);
-        \\expect(linkTarget.endsWith('/target'), 'symlink target correct');
-        \\
-        \\// Get real path
-        \\const real = await realpath(linkPath);
-        \\expect(real.endsWith('/target'), 'realpath resolves');
-        \\
-        \\// Check link type
-        \\const lstats = await lstat(linkPath);
-        \\expect((lstats.mode & constants.S_IFMT) === constants.S_IFLNK, 'symlink type');
-        \\
-        \\await unlink(linkPath);
-    , "");
     try testRun(vexor,
         \\import { open, mkdtemp, unlink } from 'std:fs';
         \\
