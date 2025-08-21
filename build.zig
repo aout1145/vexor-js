@@ -92,4 +92,6 @@ const js_files_std = .{
     .@"timer.js.compiled" = "src/vexor-std/timer.js",
     .@"tty.js.compiled" = "src/vexor-std/tty.js",
     .@"fs.js.compiled" = "src/vexor-std/fs.js",
+    .@"process.js.compiled" = "src/vexor-std/process.js",
+    .@"os.js.compiled" = "src/vexor-std/os.js",
 };

@@ -113,7 +113,7 @@ pub fn init(vexor: *Vexor) !void {
     _ = try qjs.zig_utils.newModule(
         vexor.ctx,
         internal_name,
-        &fs.func_defs ++ &path.func_defs,
+        &fs.func_defs,
         &FileClass.class_defs ++ &DirClass.class_defs,
         .{fs.value_defs},
     );
@@ -696,45 +696,6 @@ const fs = struct {
     };
 };
 
-const path = struct {
-    fn getStringFn(comptime uv_func: anytype) qjs.zig_utils.Function {
-        return struct {
-            fn func(ctx: *qjs.JSContext, _: qjs.JSValueConst, _: []qjs.JSValueConst) !?qjs.JSValue {
-                const buffer = try smp_allocator.alloc(u8, 256);
-                var size: usize = 256;
-                defer smp_allocator.free(buffer);
-                switch (uv_func(buffer.ptr, &size)) {
-                    0 => {
-                        return qjs.JS_NewStringLen(ctx, buffer.ptr, size);
-                    },
-                    uv.UV_ENOBUFS => {
-                        try check(ctx, uv_func(buffer.ptr, &size));
-                        return qjs.JS_NewStringLen(ctx, buffer.ptr, size);
-                    },
-                    else => |err| {
-                        try check(ctx, err);
-                        unreachable;
-                    },
-                }
-            }
-        }.func;
-    }
-    fn chdir(ctx: *qjs.JSContext, _: qjs.JSValueConst, js_args: []qjs.JSValueConst) !?qjs.JSValue {
-        const args = try qjs.zig_utils.getArgs(ctx, js_args, &[_]type{qjs.JSValue});
-        const dir = try qjs.zig_utils.toString(ctx, args[0]);
-        defer qjs.JS_FreeCString(ctx, dir.ptr);
-        try check(ctx, uv.uv_chdir(dir.ptr));
-        return null;
-    }
-
-    const func_defs = [_]qjs.zig_utils.FuncDef{
-        qjs.zig_utils.defFunc("getcwd", 0, getStringFn(uv.uv_cwd)),
-        qjs.zig_utils.defFunc("chdir", 0, chdir),
-        qjs.zig_utils.defFunc("gethomedir", 0, getStringFn(uv.uv_os_homedir)),
-        qjs.zig_utils.defFunc("gettmpdir", 0, getStringFn(uv.uv_os_tmpdir)),
-    };
-};
-
 test fs {
     const testRun = @import("vexor").debug.testRun;
     const vexor = try Vexor.init();
@@ -754,22 +715,6 @@ test fs {
         try qjs.zig_utils.newValue(vexor.ctx, try tmp_dir.dir.realpath(".", &tmp_path)),
     );
 
-    try testRun(vexor,
-        \\import { getcwd, chdir, gethomedir, gettmpdir } from 'std:fs';
-        \\
-        \\const cwd = getcwd();
-        \\expect(typeof cwd === 'string', 'getcwd returns string');
-        \\expect(cwd.length > 0, 'getcwd non-empty');
-        \\
-        \\const home = gethomedir();
-        \\expect(home.length > 0, 'homedir non-empty');
-        \\
-        \\const tmp = gettmpdir();
-        \\expect(tmp.length > 0, 'tmpdir non-empty');
-        \\
-        \\chdir(tmpdir);
-        \\expect(getcwd() === tmpdir, 'chdir works');
-    , "");
     try testRun(vexor,
         \\import { open, unlink, exists, mkdtemp, constants } from 'std:fs';
         \\
@@ -868,26 +813,29 @@ test fs {
         \\expect(tmpDir.startsWith(tmpdir), 'temp dir in system temp');
         \\
         \\// Temporary file
-        \\const { path, file } = await mkstemp('file-XXXXXX');
+        \\const { path, file } = await mkstemp(tmpdir + '/file-XXXXXX');
         \\expect(typeof path === 'string', 'temp file path is string')
         \\expect(file.fd > 0, 'temp file created');
         \\await file.close();
     , "");
-    try testRun(vexor,
-        \\import { mkdtemp, open, chmod, stat, chown, unlink } from 'std:fs';
-        \\
-        \\const tmpDir = await mkdtemp(tmpdir + '/perm-XXXXXX');
-        \\const filePath = tmpDir + '/perms.txt';
-        \\const file = await open(filePath, 'w');
-        \\await file.close();
-        \\
-        \\// Change permissions
-        \\await chmod(filePath, 0o600);
-        \\const stats = await stat(filePath);
-        \\expect((stats.mode & 0o777) === 0o600, 'permissions changed');
-        \\
-        \\await unlink(filePath);
-    , "");
+    if (@import("builtin").os.tag != .windows) {
+        // skip for windows
+        try testRun(vexor,
+            \\import { mkdtemp, open, chmod, stat, chown, unlink } from 'std:fs';
+            \\
+            \\const tmpDir = await mkdtemp(tmpdir + '/perm-XXXXXX');
+            \\const filePath = tmpDir + '/perms.txt';
+            \\const file = await open(filePath, 'w');
+            \\await file.close();
+            \\
+            \\// Change permissions
+            \\await chmod(filePath, 0o600);
+            \\const stats = await stat(filePath);
+            \\expect((stats.mode & 0o777) === 0o600, 'permissions changed');
+            \\
+            \\await unlink(filePath);
+        , "");
+    }
     try testRun(vexor,
         \\import { mkdtemp, symlink, readlink, realpath, lstat, unlink, exists, open, constants } from 'std:fs';
         \\
