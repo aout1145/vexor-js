@@ -32,7 +32,7 @@ pub fn newValue(ctx: *c.JSContext, value: anytype) !c.JSValue {
         i8, i16, i32, c_int => c.JS_NewInt32(ctx, value),
         u8, u16, u32, c_uint => c.JS_NewUint32(ctx, value),
         i64 => c.JS_NewInt64(ctx, value),
-        u64, usize, isize, c_long, c_ulong => c.JS_NewInt64(ctx, @intCast(value)),
+        u64, usize, isize, c_long, c_ulong, comptime_int => c.JS_NewInt64(ctx, @intCast(value)),
         f32, f64 => c.JS_NewFloat64(ctx, value),
         bool => .{ // marco translated wrongly
             .u = .{ .int32 = @intFromBool(value) },
