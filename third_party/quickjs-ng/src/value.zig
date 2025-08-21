@@ -63,9 +63,37 @@ pub fn castValue(T: type, ctx: *c.JSContext, val: c.JSValueConst) !T {
             }
             var ret: T = undefined;
             switch (T) {
+                i8, u8, i16, u16 => {
+                    var x: i32 = undefined;
+                    try check(c.JS_ToInt32(ctx, &x, val));
+                    if (x < std.math.minInt(T) or x > std.math.maxInt(T)) {
+                        _ = c.JS_ThrowRangeError(ctx, "number out of range: %s", @typeName(T).ptr);
+                        return error.OutOfRange;
+                    } else {
+                        ret = @intCast(x);
+                    }
+                },
                 i32, c_int => try check(c.JS_ToInt32(ctx, &ret, val)),
-                u32, c_uint => try check(c.JS_ToUint32(ctx, &ret, val)),
+                u32, c_uint => {
+                    var x: i64 = undefined;
+                    try check(c.JS_ToInt64(ctx, &x, val));
+                    if (x < 0) {
+                        _ = c.JS_ThrowRangeError(ctx, "number out of range: %s", @typeName(T).ptr);
+                        return error.OutOfRange;
+                    }
+                    try check(c.JS_ToUint32(ctx, &ret, val));
+                },
                 i64 => try check(c.JS_ToInt64(ctx, &ret, val)),
+                u64, usize, isize => {
+                    var x: i64 = undefined;
+                    try check(c.JS_ToInt64(ctx, &x, val));
+                    if (x < std.math.minInt(T) or x > std.math.maxInt(T)) {
+                        _ = c.JS_ThrowRangeError(ctx, "number out of range: %s", @typeName(T).ptr);
+                        return error.OutOfRange;
+                    } else {
+                        ret = @intCast(x);
+                    }
+                },
                 f64 => try check(c.JS_ToFloat64(ctx, &ret, val)),
                 else => @compileError("unsupported type: " ++ @typeName(T)),
             }

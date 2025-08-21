@@ -593,8 +593,6 @@ const fs = struct {
                 inline for (comptime ti.params[2 .. ti.params.len - 1], 0..) |param, i| {
                     if (param.type.? == [*c]const u8) {
                         args[i + 2] = (try qjs.zig_utils.toString(ctx, js_args[i])).ptr;
-                    } else if (param.type.? == usize) {
-                        args[i + 2] = @intCast(try qjs.zig_utils.castValue(i64, ctx, js_args[i]));
                     } else {
                         args[i + 2] = try qjs.zig_utils.castValue(param.type.?, ctx, js_args[i]);
                     }
@@ -769,8 +767,8 @@ test fs {
         \\const tmp = gettmpdir();
         \\expect(tmp.length > 0, 'tmpdir non-empty');
         \\
-        \\chdir(tmp);
-        \\expect(getcwd() === tmp, 'chdir works');
+        \\chdir(tmpdir);
+        \\expect(getcwd() === tmpdir, 'chdir works');
     , "");
     try testRun(vexor,
         \\import { open, unlink, exists, mkdtemp, constants } from 'std:fs';
