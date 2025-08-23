@@ -330,6 +330,25 @@ pub fn getStacktrace(ctx: *c.JSContext) !c.JSValue {
     return backtrace;
 }
 
+pub fn newError(ctx: *c.JSContext, name: []const u8, message: []const u8) !c.JSValue {
+    const obj = c.JS_NewError(ctx);
+    errdefer c.JS_FreeValue(ctx, obj);
+    if (!c.JS_IsError(ctx, obj)) return error.FailedToNewError;
+    if (c.JS_DefinePropertyValueStr(ctx, obj, "name", try newValue(ctx, name), c.JS_PROP_WRITABLE | c.JS_PROP_CONFIGURABLE) < 0) {
+        return error.FailedToDefinePropertyValueStr;
+    }
+    if (c.JS_DefinePropertyValueStr(ctx, obj, "message", try newValue(ctx, message), c.JS_PROP_WRITABLE | c.JS_PROP_CONFIGURABLE) < 0) {
+        return error.FailedToDefinePropertyValueStr;
+    }
+    return obj;
+}
+pub fn newError2(ctx: *c.JSContext, name: []const u8, message: []const u8) c.JSValue {
+    return newError(ctx, name, message) catch |e| c.JS_NewInternalError(ctx, "%s", @errorName(e).ptr);
+}
+pub fn throwError(ctx: *c.JSContext, name: []const u8, message: []const u8) c.JSValue {
+    return c.JS_Throw(newError2(ctx, name, message));
+}
+
 // special value utils
 pub const values = struct {
     fn JS_MKVAL(tag: i64, val: i32) c.JSValue {

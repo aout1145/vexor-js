@@ -94,4 +94,5 @@ const js_files_std = .{
     .@"fs.js.compiled" = "src/vexor-std/fs.js",
     .@"process.js.compiled" = "src/vexor-std/process.js",
     .@"os.js.compiled" = "src/vexor-std/os.js",
+    .@"path.js.compiled" = "src/vexor-std/path.js",
 };

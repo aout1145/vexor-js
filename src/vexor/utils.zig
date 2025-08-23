@@ -13,14 +13,11 @@ pub fn getVexor(ptr: anytype) *@import("./vexor.zig") {
 pub const uv = struct {
     fn newErrno2(ctx: *qjs.JSContext, err: c_int) !qjs.JSValue {
         std.debug.assert(err < 0);
-        const obj = qjs.JS_NewError(ctx);
-        errdefer qjs.JS_FreeValue(ctx, obj);
-        if (!qjs.JS_IsError(ctx, obj)) return error.FailedToNewError;
         var buf: [256]u8 = undefined;
         const msg = try std.fmt.bufPrint(&buf, "{s}: {s}", .{ std.mem.span(uvc.uv_err_name(err)), std.mem.span(uvc.uv_strerror(err)) });
-        _ = qjs.JS_DefinePropertyValueStr(ctx, obj, "message", qjs.JS_NewStringLen(ctx, msg.ptr, msg.len), qjs.JS_PROP_WRITABLE | qjs.JS_PROP_CONFIGURABLE);
-        _ = qjs.JS_DefinePropertyValueStr(ctx, obj, "name", qjs.JS_NewString(ctx, uvc.uv_err_name(err)), qjs.JS_PROP_WRITABLE | qjs.JS_PROP_CONFIGURABLE);
-        _ = qjs.JS_DefinePropertyValueStr(ctx, obj, "code", qjs.JS_NewInt32(ctx, @intCast(err)), qjs.JS_PROP_WRITABLE | qjs.JS_PROP_CONFIGURABLE);
+        const obj = try qjs.zig_utils.newError(ctx, "SystemError", msg);
+        errdefer qjs.JS_FreeValue(ctx, obj);
+        _ = qjs.JS_DefinePropertyValueStr(ctx, obj, "code", try qjs.zig_utils.newValue(ctx, err), qjs.JS_PROP_WRITABLE | qjs.JS_PROP_CONFIGURABLE);
         return obj;
     }
     /// create a js error from uv errno

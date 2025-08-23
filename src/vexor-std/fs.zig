@@ -7,7 +7,21 @@ const smp_allocator = Vexor.smp_allocator;
 const check = @import("vexor").utils.uv.checkThrow;
 const getVexor = @import("vexor").utils.getVexor;
 
-// fix fucking loop dependency bug
+// dep: std:path
+pub const module_name = "std:fs";
+const internal_name = "std:internal:fs";
+pub fn init(vexor: *Vexor) !void {
+    _ = try qjs.zig_utils.newModule(
+        vexor.ctx,
+        internal_name,
+        &fs.func_defs,
+        &FileClass.class_defs ++ &DirClass.class_defs,
+        .{fs.value_defs},
+    );
+    try vexor.addModule(module_name, @embedFile("fs.js.compiled"));
+}
+
+// fix fucking false loop dependency bug
 const uv_fix = struct {
     const uv_loop_t = uv.uv_loop_t;
     const uv_fs_t = uv.uv_fs_t;
@@ -105,19 +119,6 @@ fn makeStat(statbuf: uv.uv_stat_t) struct {
             .nsec = statbuf.st_birthtim.tv_nsec,
         },
     };
-}
-
-pub const module_name = "std:fs";
-const internal_name = "std:internal:fs";
-pub fn init(vexor: *Vexor) !void {
-    _ = try qjs.zig_utils.newModule(
-        vexor.ctx,
-        internal_name,
-        &fs.func_defs,
-        &FileClass.class_defs ++ &DirClass.class_defs,
-        .{fs.value_defs},
-    );
-    try vexor.addModule(module_name, @embedFile("fs.js.compiled"));
 }
 
 const FileClass = struct {
@@ -702,6 +703,8 @@ test fs {
     defer vexor.deinit();
     @import("vexor").debug.init(vexor);
     try init(vexor);
+    @import("path.zig").init(vexor);
+    @import("os.zig").init(vexor);
 
     const global_this = qjs.JS_GetGlobalObject(vexor.ctx);
     defer qjs.JS_FreeValue(vexor.ctx, global_this);

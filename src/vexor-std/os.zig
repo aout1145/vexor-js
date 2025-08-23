@@ -15,7 +15,7 @@ pub fn init(vexor: *Vexor) !void {
         internal_name,
         &os.func_defs,
         &.{},
-        .{},
+        .{os.value_defs},
     );
     try vexor.addModule(module_name, @embedFile("os.js.compiled"));
 }
@@ -48,6 +48,18 @@ const os = struct {
         qjs.zig_utils.defFunc("homedir", 0, getStringFn(uv.uv_os_homedir)),
         qjs.zig_utils.defFunc("tmpdir", 0, getStringFn(uv.uv_os_tmpdir)),
     };
+    const value_defs = .{
+        .platforms = std.Target.Os.Tag,
+        .platform = .{
+            .type = @as(u32, @intFromEnum(@import("builtin").os.tag)),
+            .name = @as([:0]const u8, @tagName(@import("builtin").os.tag)),
+        },
+        .archs = std.Target.Cpu.Arch,
+        .arch = .{
+            .type = @as(u32, @intFromEnum(@import("builtin").cpu.arch)),
+            .name = @as([:0]const u8, @tagName(@import("builtin").cpu.arch)),
+        },
+    };
 };
 
 test os {
@@ -63,5 +75,14 @@ test os {
         \\expect(homedir().length > 0, 'homedir returns non-empty');
         \\expect(typeof tmpdir() === 'string', 'tmpdir returns string');
         \\expect(tmpdir().length > 0, 'tmpdir returns non-empty');
+    , "");
+    try testRun(vexor,
+        \\import { platform, platforms, arch, archs } from 'std:os';
+        \\expect(typeof platform.type === 'number', 'platform.type is number');
+        \\expect(typeof platform.name === 'string', 'platform.name is string');
+        \\expect(typeof platforms === 'object', 'platforms is object');
+        \\expect(typeof arch.type === 'number', 'arch.type is number');
+        \\expect(typeof arch.name === 'string', 'arch.name is string');
+        \\expect(typeof archs === 'object', 'archs is object');
     , "");
 }

@@ -46,9 +46,26 @@ const process = struct {
         try check(ctx, uv.uv_chdir(dir.ptr));
         return null;
     }
+    fn getargs(ctx: *qjs.JSContext, _: qjs.JSValueConst, _: []qjs.JSValueConst) !?qjs.JSValue {
+        const args = qjs.JS_NewArray(ctx);
+        errdefer qjs.JS_FreeValue(ctx, args);
+        if (qjs.JS_IsException(args)) return error.FailedToNewArray;
+        var args_iterator = try std.process.argsWithAllocator(smp_allocator);
+        defer args_iterator.deinit();
+        var idx: u32 = 0;
+        while (args_iterator.next()) |arg| {
+            const obj = try qjs.zig_utils.newValue(ctx, arg);
+            errdefer qjs.JS_FreeValue(ctx, obj);
+            if (qjs.JS_SetPropertyUint32(ctx, args, idx, obj) < 0)
+                return error.FailedToSetPropertyUint32;
+            idx += 1;
+        }
+        return args;
+    }
     const func_defs = [_]qjs.zig_utils.FuncDef{
         qjs.zig_utils.defFunc("cwd", 0, cwd),
         qjs.zig_utils.defFunc("chdir", 0, chdir),
+        qjs.zig_utils.defFunc("args", 0, getargs),
     };
 };
 
@@ -77,5 +94,11 @@ test process {
         \\expect(cwd().length > 0, 'cwd returns non-empty');
         \\chdir(tmpdir);
         \\expect(cwd() === tmpdir, 'chdir works');
+    , "");
+    try testRun(vexor,
+        \\import { args } from 'std:process';
+        \\const argv = args();
+        \\expect(Array.isArray(argv), 'args returns array');
+        \\expect(argv.length > 0, 'args returns non-empty');
     , "");
 }
